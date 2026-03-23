@@ -4,10 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lookstylo Order Manager</title>
+    <!-- React & ReactDOM -->
     <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <!-- Babel for JSX -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- JsBarcode & QRCode & Scanner -->
     <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode/html5-qrcode.min.js" type="text/javascript"></script>
@@ -40,11 +44,13 @@
             #print-section { 
                 position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 0; 
                 display: flex !important; flex-direction: column; align-items: center;
+                gap: 0 !important;
             }
             .a5-container {
                 box-shadow: none !important; border: none !important;
                 margin: 0 !important; padding: 8mm !important;
                 page-break-after: always; page-break-inside: avoid;
+                transform: scale(1) !important;
             }
             .print\:flex { display: flex !important; }
         }
@@ -58,8 +64,105 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
+        // --- ICON COMPONENTS ---
+        const InstagramIcon = ({ className = "w-5 h-5" }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect>
+                <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path>
+                <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line>
+            </svg>
+        );
+
+        const WhatsAppIcon = ({ className = "w-5 h-5" }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
+            </svg>
+        );
+
+        // --- REUSABLE BARCODE & QR COMPONENTS ---
+        const Barcode = ({ value }) => {
+            const ref = useRef(null);
+            useEffect(() => {
+                if (ref.current && value) {
+                    JsBarcode(ref.current, value, { format: "CODE128", displayValue: true, fontSize: 20, fontOptions: "bold", textMargin: 5, height: 60, margin: 0 });
+                }
+            }, [value]);
+            return <canvas ref={ref}></canvas>;
+        };
+
+        const QRCodeRender = ({ data }) => {
+            const ref = useRef(null);
+            useEffect(() => {
+                if (ref.current && data) {
+                    ref.current.innerHTML = "";
+                    new QRCode(ref.current, { text: data, width: 120, height: 120, colorDark: "#000000", colorLight: "#ffffff", correctLevel: QRCode.CorrectLevel.M });
+                }
+            }, [data]);
+            return <div ref={ref} className="border border-gray-200 p-1 bg-white"></div>;
+        };
+
+        // --- REUSABLE LABEL COMPONENT ---
+        const LabelContent = ({ orderId, toName, toAddress, toPhone, billName, billAddress, billPhone }) => (
+            <div className="flex-grow flex flex-col text-black bg-white box-border w-full h-full">
+                {/* Header */}
+                <div className="flex items-center justify-between border-b-2 border-gray-900 pb-4 mb-4">
+                    <div className="w-1/4 flex flex-col items-center">
+                        
+                    </div>
+                    <div className="text-center flex-1 px-2">
+                        <div className="text-brand-red font-extrabold text-3xl tracking-wide uppercase">LOOKSTLYO FASHION</div>
+                        <div className="text-brand-blue font-bold text-xl tracking-wider uppercase mt-1">SHARIEF ENTERPRISES</div>
+                    </div>
+                    <div className="w-1/4 flex justify-end">
+                        <QRCodeRender data={JSON.stringify({ id: orderId, name: toName, phone: toPhone })} />
+                    </div>
+                </div>
+
+                {/* Body Content */}
+                <div className="flex-grow flex flex-col">
+                    <div className="mb-6">
+                        <h3 className="font-extrabold text-2xl uppercase mb-1">FROM:</h3>
+                        <div className="font-bold text-lg leading-snug uppercase">
+                            LOOKSTLYO FASHION,<br/>SHOP NO 02, OPPOSITE POST OFFICE<br/>PAKKIRITHAKA JOLARPATTAI - 635851.<br/>📞 8680857511
+                        </div>
+                    </div>
+                    
+                    <div className="mb-4">
+                        <h3 className="font-extrabold text-2xl uppercase mb-1">TO,</h3>
+                        <div className="font-bold text-lg leading-snug uppercase">
+                            {toName || ' '}<br/>
+                            {toAddress ? toAddress.split('\n').map((line, i) => <React.Fragment key={i}>{line}<br/></React.Fragment>) : ' '}<br/>
+                            {toPhone ? `📞 ${toPhone}` : ' '}
+                        </div>
+                    </div>
+
+                    {(billName || billAddress || billPhone) && (
+                        <div className="mb-4 pt-4 border-t border-dashed border-gray-400">
+                            <h3 className="font-extrabold text-xl uppercase mb-1">BILL TO,</h3>
+                            <div className="font-bold text-md leading-snug uppercase text-gray-700">
+                                {billName || ' '}<br/>
+                                {billAddress ? billAddress.split('\n').map((line, i) => <React.Fragment key={i}>{line}<br/></React.Fragment>) : ' '}<br/>
+                                {billPhone || ' '}
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* Footer */}
+                <div className="mt-auto flex flex-col items-center pt-4 border-t-2 border-gray-900">
+                    <div className="mb-4 bg-white p-2 rounded">
+                        <Barcode value={orderId || '0000'} />
+                    </div>
+                    <div className="flex items-center justify-between w-full font-bold text-lg text-brand-red uppercase px-4">
+                        <div className="flex items-center gap-1.5"><InstagramIcon className="w-6 h-6" /> LOKSTLYO_FASHION</div>
+                        <div className="flex items-center gap-1.5"><WhatsAppIcon className="w-6 h-6" /> 8680857511</div>
+                    </div>
+                </div>
+            </div>
+        );
+
         function App() {
-            const [activeTab, setActiveTab] = useState('generator'); // 'generator', 'billing', 'scanner', 'settings'
+            const [activeTab, setActiveTab] = useState('billing'); // Default to billing
             const [sheetUrl, setSheetUrl] = useState(localStorage.getItem('googleSheetUrl') || '');
             const [serverUrl, setServerUrl] = useState(localStorage.getItem('serverUrl') || '/api/save-label');
 
@@ -77,6 +180,7 @@
             const [billDate, setBillDate] = useState(new Date().toISOString().split('T')[0]);
             const [billCustomerName, setBillCustomerName] = useState('');
             const [billCustomerPhone, setBillCustomerPhone] = useState('');
+            const [billCustomerAddress, setBillCustomerAddress] = useState('');
             const [billDelivery, setBillDelivery] = useState('Store Walk-in');
             const [billCourier, setBillCourier] = useState('Professional Courier');
             const [billTracking, setBillTracking] = useState('');
@@ -88,21 +192,7 @@
             const [scanResult, setScanResult] = useState(null);
             const [isScanning, setIsScanning] = useState(false);
             const [syncStatus, setSyncStatus] = useState('');
-
-            const barcodeRef = useRef(null);
-            const qrRef = useRef(null);
             const scannerRef = useRef(null);
-
-            // Effect: Generate Barcodes
-            useEffect(() => {
-                if (activeTab === 'generator') {
-                    if (barcodeRef.current) JsBarcode(barcodeRef.current, orderId || '0000', { format: "CODE128", displayValue: true, fontSize: 20, height: 60, margin: 0 });
-                    if (qrRef.current) {
-                        qrRef.current.innerHTML = ""; 
-                        new QRCode(qrRef.current, { text: JSON.stringify({ id: orderId, name: toName, phone: toPhone }), width: 120, height: 120 });
-                    }
-                }
-            }, [orderId, toName, toAddress, toPhone, billName, billAddress, billPhone, activeTab]);
 
             // Effect: Scanner Setup
             useEffect(() => {
@@ -165,14 +255,15 @@
                     <div className="border-2 border-gray-900 w-full h-full flex flex-col relative p-4 bg-white box-border text-xs">
                         {/* Header */}
                         <div className="text-center border-b-2 border-gray-900 pb-3 mb-3 mt-2 shrink-0">
-                            <img src="LookStylo_Circular_Fixed(1).jpg" alt="LookStylo Logo" className="mx-auto h-16 w-auto object-contain mb-2" onError={(e) => e.target.style.display='none'} />
-                            <h1 className="text-3xl font-extrabold tracking-wider text-gray-900 leading-none mb-1 font-serif">LOOKSTYLO FASHION</h1>
+                            
+                            <h1 className="text-3xl font-extrabold tracking-wider text-gray-900 leading-none mb-1 font-serif mt-2">LOOKSTYLO FASHION</h1>
                             <p className="text-[11px] text-gray-800 leading-tight mb-1">
                                 Shop No. 2, opposite post office, Tirupathur Main Road,<br/>
                                 Pakkirithaka, Jolarpattai, Katteri Village - 635851
                             </p>
-                            <div className="flex justify-center items-center gap-3 font-bold text-gray-900">
-                                <span>📞 8680857511</span> | <span>📷 @lookstylo_fashion</span>
+                            <div className="flex justify-center items-center gap-3 font-bold text-gray-900 mt-1">
+                                <span className="flex items-center gap-1"><WhatsAppIcon className="w-3.5 h-3.5" /> 8680857511</span> | 
+                                <span className="flex items-center gap-1"><InstagramIcon className="w-3.5 h-3.5" /> @lookstylo_fashion</span>
                             </div>
                             <p className="font-bold text-gray-900 mt-1">GSTIN: 33NEYPS4388G1ZC</p>
                         </div>
@@ -180,7 +271,7 @@
                         {/* Customer Info */}
                         <div className="flex justify-between mb-3 font-medium shrink-0">
                             <div className="space-y-1">
-                                <p><span className="w-14 inline-block text-gray-600">Name:</span> <span className="uppercase border-b border-gray-400 pb-0.5 inline-block min-w-[120px]">{billCustomerName || 'Walk-in'}</span></p>
+                                <p><span className="w-14 inline-block text-gray-600">Name:</span> <span className="uppercase border-b border-gray-400 pb-0.5 inline-block min-w-[120px]">{billCustomerName || 'Walk-in Customer'}</span></p>
                                 <p><span className="w-14 inline-block text-gray-600">Phone:</span> <span className="border-b border-gray-400 pb-0.5 inline-block min-w-[120px]">{billCustomerPhone || '-'}</span></p>
                                 <p><span className="w-14 inline-block text-gray-600">Del:</span> <span className="border-b border-gray-400 pb-0.5 inline-block min-w-[120px] font-bold">{deliveryText}</span></p>
                             </div>
@@ -244,76 +335,56 @@
             return (
                 <div className="min-h-screen flex flex-col">
                     {/* Navigation - Hidden on Print */}
-                    <nav id="no-print" className="bg-gray-800 text-white p-4 shadow-md">
-                        <div className="max-w-6xl mx-auto flex justify-between items-center">
-                            <h1 className="text-xl font-bold">📦 Lookstylo Manager</h1>
-                            <div className="space-x-2 md:space-x-4">
-                                <button onClick={() => setActiveTab('generator')} className={`px-3 py-2 rounded ${activeTab === 'generator' ? 'bg-blue-600' : 'hover:bg-gray-700'}`}>Label</button>
-                                <button onClick={() => setActiveTab('billing')} className={`px-3 py-2 rounded ${activeTab === 'billing' ? 'bg-indigo-600' : 'hover:bg-gray-700'}`}>Billing</button>
-                                <button onClick={() => setActiveTab('scanner')} className={`px-3 py-2 rounded ${activeTab === 'scanner' ? 'bg-blue-600' : 'hover:bg-gray-700'}`}>Scan</button>
-                                <button onClick={() => setActiveTab('settings')} className={`px-3 py-2 rounded ${activeTab === 'settings' ? 'bg-blue-600' : 'hover:bg-gray-700'}`}>Settings</button>
+                    <nav id="no-print" className="bg-gray-900 text-white p-4 shadow-md">
+                        <div className="max-w-7xl mx-auto flex justify-between items-center">
+                            <h1 className="text-xl font-bold flex items-center gap-2">
+                                📦 Lookstylo Manager
+                            </h1>
+                            <div className="flex space-x-2 md:space-x-4">
+                                <button onClick={() => setActiveTab('billing')} className={"px-4 py-2 rounded font-semibold transition-colors " + (activeTab === 'billing' ? 'bg-indigo-600' : 'hover:bg-gray-700')}>Billing</button>
+                                <button onClick={() => setActiveTab('generator')} className={"px-4 py-2 rounded font-semibold transition-colors " + (activeTab === 'generator' ? 'bg-blue-600' : 'hover:bg-gray-700')}>Label Only</button>
+                                <button onClick={() => setActiveTab('scanner')} className={"px-4 py-2 rounded font-semibold transition-colors " + (activeTab === 'scanner' ? 'bg-blue-600' : 'hover:bg-gray-700')}>Scanner</button>
+                                <button onClick={() => setActiveTab('settings')} className={"px-4 py-2 rounded font-semibold transition-colors " + (activeTab === 'settings' ? 'bg-gray-600' : 'hover:bg-gray-700')}>Settings</button>
                             </div>
                         </div>
                     </nav>
 
-                    <main className="flex-grow p-4 md:p-8 max-w-7xl mx-auto w-full flex flex-col md:flex-row gap-8">
+                    <main className="flex-grow p-4 md:p-6 max-w-7xl mx-auto w-full flex flex-col md:flex-row gap-8">
                         
-                        {/* -------------------- TAB: GENERATOR -------------------- */}
-                        {activeTab === 'generator' && (
-                            <>
-                                <div id="no-print" className="w-full md:w-1/3 bg-white p-6 rounded-lg shadow-md h-fit">
-                                    <h2 className="text-2xl font-bold mb-6 border-b pb-2">Label Details</h2>
-                                    <div className="space-y-4">
-                                        <div><label className="block text-sm font-bold text-gray-700 mb-1">Order ID</label><input type="text" value={orderId} onChange={(e) => setOrderId(e.target.value)} className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none uppercase" /></div>
-                                        <div><label className="block text-sm font-bold text-gray-700 mb-1">Name (TO)</label><input type="text" value={toName} onChange={(e) => setToName(e.target.value)} className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none uppercase" /></div>
-                                        <div><label className="block text-sm font-bold text-gray-700 mb-1">Address (TO)</label><textarea rows="3" value={toAddress} onChange={(e) => setToAddress(e.target.value)} className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none uppercase"></textarea></div>
-                                        <div><label className="block text-sm font-bold text-gray-700 mb-1">Phone Number(s)</label><input type="text" value={toPhone} onChange={(e) => setToPhone(e.target.value)} className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none uppercase" /></div>
-                                        <button onClick={handlePrint} className="w-full mt-6 bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded shadow">Print A5 Label</button>
-                                        <button onClick={handleSave} className="w-full mt-3 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded shadow">Save Details</button>
-                                    </div>
-                                </div>
-                                <div id="print-section" className="w-full md:w-2/3 flex justify-center">
-                                    <div className="a5-container">
-                                        <div className="flex items-center justify-between border-b-2 border-transparent pb-4 mb-4">
-                                            <div className="w-1/4"><img src="LookStylo_Circular_Fixed(1).jpg" alt="Logo" className="w-24 h-24 object-contain" onError={(e) => e.target.style.display='none'}/></div>
-                                            <div className="text-center flex-1 px-2">
-                                                <div className="text-brand-red font-extrabold text-3xl tracking-wide uppercase">LOOKSTLYO FASHION</div>
-                                                <div className="text-brand-blue font-bold text-xl tracking-wider uppercase mt-1">SHARIEF ENTERPRISES</div>
-                                            </div>
-                                            <div className="w-1/4 flex justify-end"><div ref={qrRef} className="border border-gray-200 p-1"></div></div>
-                                        </div>
-                                        <div className="flex-grow flex flex-col text-black">
-                                            <div className="mb-8"><h3 className="font-extrabold text-2xl uppercase mb-2">FROM:</h3><div className="font-bold text-xl leading-snug uppercase">LOOKSTLYO FASHION,<br/>SHOP NO 02, OPPSITE OFFICE<br/>PAKKIRITHAKA JOLARPATTAI-<br/>635851.<br/>8680857511.</div></div>
-                                            <div className="mb-4"><h3 className="font-extrabold text-2xl uppercase mb-2">TO,</h3><div className="font-bold text-xl leading-snug uppercase">{toName || ' '}<br/>{toAddress ? toAddress.split('\n').map((line, i) => <React.Fragment key={i}>{line}<br/></React.Fragment>) : ' '}<br/>{toPhone || ' '}</div></div>
-                                        </div>
-                                        <div className="mt-auto flex flex-col items-center">
-                                            <div className="mb-6"><canvas ref={barcodeRef}></canvas></div>
-                                            <div className="flex items-center justify-between w-full font-bold text-xl text-brand-red uppercase px-4">
-                                                <div>📷 LOKSTLYO_FASHION</div><div>📞 8680857511</div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </>
-                        )}
-
                         {/* -------------------- TAB: BILLING -------------------- */}
                         {activeTab === 'billing' && (
                             <>
-                                <div id="no-print" className="w-full md:w-1/2 bg-white p-6 rounded-lg shadow-md h-fit">
-                                    <h2 className="text-2xl font-bold mb-6 border-b pb-2 text-indigo-900">Billing Setup</h2>
+                                <div id="no-print" className="w-full md:w-1/2 bg-white p-6 rounded-lg shadow-xl h-fit border border-gray-100">
+                                    <div className="flex justify-between items-center mb-6 border-b pb-3">
+                                        <div>
+                                            <h2 className="text-2xl font-bold text-indigo-900">Billing Setup</h2>
+                                            <p className="text-sm text-gray-500">Create Bill & Shipping Label simultaneously</p>
+                                        </div>
+                                    </div>
+
                                     <div className="grid grid-cols-2 gap-4 mb-4">
                                         <div><label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Invoice No.</label><input type="text" value={billInvoice} onChange={e=>setBillInvoice(e.target.value)} className="w-full p-2 border rounded focus:ring-2 outline-none" /></div>
                                         <div><label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Date</label><input type="date" value={billDate} onChange={e=>setBillDate(e.target.value)} className="w-full p-2 border rounded focus:ring-2 outline-none" /></div>
-                                        <div><label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Customer Name</label><input type="text" value={billCustomerName} onChange={e=>setBillCustomerName(e.target.value)} placeholder="Walk-in" className="w-full p-2 border rounded focus:ring-2 outline-none" /></div>
-                                        <div><label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Phone</label><input type="text" value={billCustomerPhone} onChange={e=>setBillCustomerPhone(e.target.value)} placeholder="Optional" className="w-full p-2 border rounded focus:ring-2 outline-none" /></div>
+                                        <div><label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Customer Name</label><input type="text" value={billCustomerName} onChange={e=>setBillCustomerName(e.target.value)} placeholder="Walk-in Customer" className="w-full p-2 border rounded focus:ring-2 outline-none" /></div>
+                                        <div><label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Phone Number</label><input type="text" value={billCustomerPhone} onChange={e=>setBillCustomerPhone(e.target.value)} placeholder="Optional" className="w-full p-2 border rounded focus:ring-2 outline-none" /></div>
                                         
-                                        <div className="col-span-2"><label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Delivery Type</label><select value={billDelivery} onChange={e=>setBillDelivery(e.target.value)} className="w-full p-2 border rounded focus:ring-2 outline-none bg-white font-semibold"><option value="Store Walk-in">Store Walk-in</option><option value="Courier">Courier Delivery</option></select></div>
+                                        <div className="col-span-2">
+                                            <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Delivery Type</label>
+                                            <select value={billDelivery} onChange={e=>setBillDelivery(e.target.value)} className="w-full p-2.5 border rounded focus:ring-2 focus:ring-indigo-500 outline-none bg-white font-bold text-indigo-700">
+                                                <option value="Store Walk-in">🛍️ Store Walk-in</option>
+                                                <option value="Courier">🚚 Courier Delivery (Generates Label)</option>
+                                            </select>
+                                        </div>
                                         
+                                        {/* Courier Extras (Includes Address for Label generation) */}
                                         {billDelivery === 'Courier' && (
-                                            <div className="col-span-2 grid grid-cols-2 gap-4 bg-indigo-50 p-3 rounded border border-indigo-200">
-                                                <div><label className="block text-xs font-semibold text-indigo-600 uppercase mb-1">Select Courier</label><select value={billCourier} onChange={e=>setBillCourier(e.target.value)} className="w-full p-2 border rounded bg-white outline-none"><option value="Professional Courier">Professional Courier</option><option value="ST Courier">ST Courier</option><option value="India Post">India Post</option></select></div>
-                                                <div><label className="block text-xs font-semibold text-indigo-600 uppercase mb-1">Tracking ID</label><input type="text" value={billTracking} onChange={e=>setBillTracking(e.target.value)} placeholder="Tracking No." className="w-full p-2 border rounded bg-white outline-none" /></div>
+                                            <div className="col-span-2 grid grid-cols-2 gap-4 bg-indigo-50 p-4 rounded-lg border border-indigo-200">
+                                                <div><label className="block text-xs font-semibold text-indigo-700 uppercase mb-1">Select Courier</label><select value={billCourier} onChange={e=>setBillCourier(e.target.value)} className="w-full p-2 border border-indigo-200 rounded bg-white outline-none"><option value="Professional Courier">Professional Courier</option><option value="ST Courier">ST Courier</option><option value="India Post">India Post</option></select></div>
+                                                <div><label className="block text-xs font-semibold text-indigo-700 uppercase mb-1">Tracking ID</label><input type="text" value={billTracking} onChange={e=>setBillTracking(e.target.value)} placeholder="Tracking No." className="w-full p-2 border border-indigo-200 rounded bg-white outline-none" /></div>
+                                                <div className="col-span-2">
+                                                    <label className="block text-xs font-semibold text-indigo-700 uppercase mb-1">Shipping Address (For Label)</label>
+                                                    <textarea rows="2" value={billCustomerAddress} onChange={e=>setBillCustomerAddress(e.target.value)} placeholder="Full Delivery Address" className="w-full p-2 border border-indigo-200 rounded bg-white outline-none resize-none"></textarea>
+                                                </div>
                                             </div>
                                         )}
                                     </div>
@@ -323,31 +394,74 @@
                                         <div className="p-4 space-y-3">
                                             {billItems.map(item => (
                                                 <div key={item.id} className="flex gap-2">
-                                                    <input type="text" placeholder="Item Name" value={item.particular} onChange={e=>updateBillItem(item.id, 'particular', e.target.value)} className="flex-grow p-2 border rounded text-sm uppercase outline-none" />
-                                                    <input type="number" min="1" value={item.qty} onChange={e=>updateBillItem(item.id, 'qty', e.target.value)} className="w-16 p-2 border rounded text-sm outline-none" />
-                                                    <input type="number" min="0" value={item.rate} placeholder="Rate" onChange={e=>updateBillItem(item.id, 'rate', e.target.value)} className="w-20 p-2 border rounded text-sm outline-none" />
-                                                    <button onClick={()=>removeBillItem(item.id)} className={`text-red-500 hover:bg-red-50 px-2 rounded ${billItems.length === 1 ? 'invisible' : ''}`}>✕</button>
+                                                    <input type="text" placeholder="Item Name" value={item.particular} onChange={e=>updateBillItem(item.id, 'particular', e.target.value)} className="flex-grow p-2 border rounded text-sm uppercase outline-none focus:ring-1 focus:ring-indigo-500" />
+                                                    <input type="number" min="1" value={item.qty} onChange={e=>updateBillItem(item.id, 'qty', e.target.value)} className="w-16 p-2 border rounded text-sm outline-none focus:ring-1 focus:ring-indigo-500" />
+                                                    <input type="number" min="0" value={item.rate} placeholder="Rate" onChange={e=>updateBillItem(item.id, 'rate', e.target.value)} className="w-24 p-2 border rounded text-sm outline-none focus:ring-1 focus:ring-indigo-500" />
+                                                    <button onClick={()=>removeBillItem(item.id)} className={"text-red-500 hover:bg-red-50 px-2 rounded " + (billItems.length === 1 ? 'invisible' : '')}>✕</button>
                                                 </div>
                                             ))}
-                                            <button onClick={addBillItem} className="text-sm font-semibold text-indigo-600 hover:bg-indigo-50 px-3 py-1 rounded transition-colors">+ Add Row</button>
+                                            <button onClick={addBillItem} className="text-sm font-bold text-indigo-600 hover:bg-indigo-50 px-3 py-1 rounded transition-colors">+ Add Row</button>
                                         </div>
                                     </div>
 
                                     <div className="grid grid-cols-2 gap-4">
-                                        <div><label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Payment</label><select value={billPayment} onChange={e=>setBillPayment(e.target.value)} className="w-full p-2 border rounded outline-none bg-white"><option value="Cash">Cash</option><option value="GPay / UPI">GPay / UPI</option><option value="Card">Card</option></select></div>
-                                        <div><label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Discount (₹)</label><input type="number" min="0" value={billDiscount} onChange={e=>setBillDiscount(e.target.value)} className="w-full p-2 border rounded outline-none" /></div>
+                                        <div><label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Payment Mode</label><select value={billPayment} onChange={e=>setBillPayment(e.target.value)} className="w-full p-2 border rounded outline-none bg-white"><option value="Cash">Cash</option><option value="GPay / UPI">GPay / UPI</option><option value="Card">Card</option></select></div>
+                                        <div><label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Discount Amount (₹)</label><input type="number" min="0" value={billDiscount} onChange={e=>setBillDiscount(e.target.value)} className="w-full p-2 border rounded outline-none" /></div>
                                     </div>
-                                    <button onClick={handlePrint} className="w-full mt-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded shadow">Print A5 Bill</button>
+                                    <button onClick={handlePrint} className="w-full mt-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 px-4 rounded-lg shadow-lg flex justify-center items-center gap-2 transition-transform transform hover:scale-[1.01]">
+                                        🖨️ Print Bill {billDelivery === 'Courier' ? '& Shipping Label' : ''}
+                                    </button>
                                 </div>
 
-                                <div id="print-section" className="w-full md:w-1/2 flex flex-col gap-8 items-center bg-gray-200 py-4 print:py-0 print:bg-white rounded overflow-y-auto">
-                                    <div className="a5-container relative print:scale-100 transform origin-top scale-[0.85] md:scale-100">
+                                <div id="print-section" className="w-full md:w-1/2 flex flex-col gap-6 items-center bg-gray-200 p-4 print:p-0 print:bg-white rounded overflow-y-auto">
+                                    <div className="text-center text-xs font-bold text-gray-500 uppercase tracking-widest print:hidden">Live Previews</div>
+                                    
+                                    {/* Copy 1: Buyer's Bill */}
+                                    <div className="a5-container relative print:scale-100 transform origin-top scale-[0.85] md:scale-95 shadow-2xl transition-all">
                                         <div className="absolute top-0 right-0 bg-gray-900 text-white text-[10px] px-2 py-1 font-bold uppercase z-10">Original - Buyer's Copy</div>
                                         <BillContent />
                                     </div>
+
+                                    {/* Copy 2: Shop Bill (Hidden on screen to save space, visible on print) */}
                                     <div className="a5-container relative hidden print:flex">
                                         <div className="absolute top-0 right-0 bg-gray-900 text-white text-[10px] px-2 py-1 font-bold uppercase z-10">Duplicate - Shop Copy</div>
                                         <BillContent />
+                                    </div>
+
+                                    {/* Copy 3: Shipping Label (Conditional based on Delivery Mode) */}
+                                    {billDelivery === 'Courier' && (
+                                        <div className="a5-container relative print:scale-100 transform origin-top scale-[0.85] md:scale-95 shadow-2xl transition-all print:flex">
+                                            <div className="absolute top-0 right-0 bg-indigo-600 text-white text-[10px] px-2 py-1 font-bold uppercase z-10">Shipping Label</div>
+                                            <LabelContent 
+                                                orderId={billTracking || billInvoice} 
+                                                toName={billCustomerName} 
+                                                toAddress={billCustomerAddress} 
+                                                toPhone={billCustomerPhone} 
+                                            />
+                                        </div>
+                                    )}
+                                </div>
+                            </>
+                        )}
+
+                        {/* -------------------- TAB: GENERATOR (Label Only) -------------------- */}
+                        {activeTab === 'generator' && (
+                            <>
+                                <div id="no-print" className="w-full md:w-1/3 bg-white p-6 rounded-lg shadow-md h-fit">
+                                    <h2 className="text-2xl font-bold mb-6 border-b pb-2">Manual Label</h2>
+                                    <div className="space-y-4">
+                                        <div><label className="block text-sm font-bold text-gray-700 mb-1">Order ID</label><input type="text" value={orderId} onChange={(e) => setOrderId(e.target.value)} className="w-full p-2 border rounded outline-none uppercase" /></div>
+                                        <div><label className="block text-sm font-bold text-gray-700 mb-1">Name (TO)</label><input type="text" value={toName} onChange={(e) => setToName(e.target.value)} className="w-full p-2 border rounded outline-none uppercase" /></div>
+                                        <div><label className="block text-sm font-bold text-gray-700 mb-1">Address (TO)</label><textarea rows="3" value={toAddress} onChange={(e) => setToAddress(e.target.value)} className="w-full p-2 border rounded outline-none uppercase"></textarea></div>
+                                        <div><label className="block text-sm font-bold text-gray-700 mb-1">Phone Number(s)</label><input type="text" value={toPhone} onChange={(e) => setToPhone(e.target.value)} className="w-full p-2 border rounded outline-none uppercase" /></div>
+                                        <button onClick={handlePrint} className="w-full mt-6 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded shadow">Print Label Only</button>
+                                        <button onClick={handleSave} className="w-full mt-3 bg-gray-800 hover:bg-gray-900 text-white font-bold py-3 px-4 rounded shadow">Save Label Data</button>
+                                    </div>
+                                </div>
+                                <div id="print-section" className="w-full md:w-2/3 flex justify-center">
+                                    <div className="a5-container shadow-2xl">
+                                        {/* LOGO IN MANUAL LABEL IS HANDLED BY THE LABELCONTENT COMPONENT */}
+                                        <LabelContent orderId={orderId} toName={toName} toAddress={toAddress} toPhone={toPhone} />
                                     </div>
                                 </div>
                             </>
@@ -370,7 +484,7 @@
                                             <button onClick={syncToGoogleSheets} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">💾 Save to Sheets</button>
                                             <button onClick={() => {setScanResult(null); setIsScanning(true);}} className="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded">🔄 Scan Again</button>
                                         </div>
-                                        {syncStatus && <p className={`mt-3 text-center text-sm font-bold ${syncStatus.includes('Successfully') ? 'text-green-600' : 'text-red-600'}`}>{syncStatus}</p>}
+                                        {syncStatus && <p className={"mt-3 text-center text-sm font-bold " + (syncStatus.includes('Successfully') ? 'text-green-600' : 'text-red-600')}>{syncStatus}</p>}
                                     </div>
                                 )}
                             </div>
@@ -389,7 +503,7 @@
                                         <label className="block text-sm font-bold text-gray-700 mb-2">Backend Server URL (Node API)</label>
                                         <textarea rows="2" value={serverUrl} onChange={e => { setServerUrl(e.target.value); localStorage.setItem('serverUrl', e.target.value); }} placeholder="/api/save-label" className="w-full p-2 border rounded focus:ring-2 outline-none font-mono text-xs"></textarea>
                                     </div>
-                                    <button onClick={() => alert('Saved Settings')} className="w-full bg-gray-600 text-white font-bold py-2 px-4 rounded mt-6">Test Connection</button>
+                                    <button onClick={() => alert('Saved Settings')} className="w-full bg-gray-800 text-white font-bold py-2 px-4 rounded mt-6">Save & Test Connection</button>
                                 </div>
                             </div>
                         )}

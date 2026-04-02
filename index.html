@@ -50,7 +50,8 @@
                 box-shadow: none !important; border: none !important;
                 margin: 0 !important; padding: 8mm !important;
                 page-break-after: always; page-break-inside: avoid;
-                transform: scale(1) !important;
+                transform: none !important;
+                overflow: hidden !important;
             }
             .print\:flex { display: flex !important; }
         }
@@ -102,8 +103,13 @@
         };
 
         // --- REUSABLE LABEL COMPONENT ---
-        const LabelContent = ({ orderId, toName, toAddress, toPhone, billName, billAddress, billPhone }) => (
-            <div className="flex-grow flex flex-col text-black bg-white box-border w-full h-full">
+        const LabelContent = ({ orderId, toName, toAddress, toPhone, billName, billAddress, billPhone, copyLabel }) => (
+            <div className="border-2 border-gray-900 flex-grow flex flex-col text-black bg-white box-border w-full h-full p-4 relative">
+                {copyLabel && (
+                    <div className="absolute top-0 right-0 bg-indigo-600 text-white text-[9px] px-2 py-0.5 font-bold uppercase z-10">
+                        {copyLabel}
+                    </div>
+                )}
                 {/* Header */}
                 <div className="flex items-center justify-between border-b-2 border-gray-900 pb-4 mb-4">
                     <div className="w-1/4 flex flex-col items-center">
@@ -186,6 +192,7 @@
             const [billTracking, setBillTracking] = useState('');
             const [billPayment, setBillPayment] = useState('Cash');
             const [billDiscount, setBillDiscount] = useState(0);
+            const [billPromoCode, setBillPromoCode] = useState('NO CODE');
             const [billItems, setBillItems] = useState([{ id: Date.now(), particular: '', qty: 1, rate: 0 }]);
 
             // --- SCANNER STATE ---
@@ -252,12 +259,23 @@
             const grandTotal = Math.round(subTotal - (Number(billDiscount) || 0));
             const totalQty = billItems.reduce((acc, item) => acc + Number(item.qty || 0), 0);
 
-            // Reusable Bill Function (Optimized to prevent React re-mounting issues)
+            // Reusable Bill Function
             const renderBillContent = (copyLabel) => {
                 let deliveryText = billDelivery === 'Courier' ? (billTracking ? `${billCourier} (Track: ${billTracking})` : billCourier) : 'Store Walk-in';
                 let terms = billDelivery === 'Courier' 
                     ? ["Unboxing video is mandatory for any claims.", "Exchange for damaged/wrong items within 2 days of delivery.", "Shipping charges are non-refundable."] 
                     : ["Goods once sold will not be taken back."];
+
+                let promoDetails = { title: "", subtitle: "" };
+                if (billPromoCode === 'FREESHIP') {
+                    promoDetails = { title: "Free Shipping on your next purchase", subtitle: "(Valid only for 10 days after receiving courier)" };
+                } else if (billPromoCode === 'GET350 SHIRT') {
+                    promoDetails = { title: "Get ₹350 Off on your next Shirt purchase", subtitle: "(Valid only for 10 days after receiving courier)" };
+                } else if (billPromoCode === '10%DIS') {
+                    promoDetails = { title: "Get 10% Flat Discount on your next purchase", subtitle: "(Valid only for 10 days after receiving courier)" };
+                } else if (billPromoCode === '5%DIS') {
+                    promoDetails = { title: "Get 5% Flat Discount on your next purchase", subtitle: "(Valid only for 10 days after receiving courier)" };
+                }
 
                 return (
                     <div className="border-2 border-gray-900 w-full h-full flex flex-col relative p-4 bg-white box-border text-xs">
@@ -317,7 +335,6 @@
                                             <td className="py-2 px-2 text-right">{(item.qty * item.rate) ? (item.qty * item.rate).toFixed(2) : ''}</td>
                                         </tr>
                                     ))}
-                                    <tr className="flex-grow"><td className="border-r border-gray-400"></td><td className="border-r border-gray-400"></td><td className="border-r border-gray-400"></td><td className="border-r border-gray-400"></td><td></td></tr>
                                 </tbody>
                             </table>
                             <div className="text-[9px] text-gray-500 italic py-1 px-1 border-b-2 border-gray-900 bg-gray-50 text-right mt-auto">
@@ -332,11 +349,14 @@
                                     <p className="font-bold text-gray-800 mb-1">Terms & Conditions:</p>
                                     <ul className="list-disc pl-3 space-y-0.5">{terms.map((t, i) => <li key={i}>{t}</li>)}</ul>
                                     <p className="mt-2 text-xs italic">Thank you for shopping with us!</p>
-                                    <div className="mt-2 border-2 border-dashed border-gray-400 p-1.5 rounded bg-gray-50 text-center">
-                                        <p className="font-bold text-gray-800 text-[10px] uppercase">🎁 Online Special</p>
-                                        <p className="text-[9px] text-gray-600 mt-0.5">Free Shipping on purchases above ₹500</p>
-                                        <p className="text-[10px] font-bold mt-0.5">Use Code: <span className="text-brand-red text-xs">FREESHIP</span></p>
-                                    </div>
+                                    {billPromoCode !== 'NO CODE' && (
+                                        <div className="mt-2 border-2 border-dashed border-gray-400 p-1.5 rounded bg-gray-50 text-center">
+                                            <p className="font-bold text-gray-800 text-[10px] uppercase">🎁 Online Special</p>
+                                            <p className="text-[9px] text-gray-600 mt-0.5">{promoDetails.title}</p>
+                                            <p className="text-[8px] text-gray-500 font-semibold mt-0.5 uppercase">{promoDetails.subtitle}</p>
+                                            <p className="text-[10px] font-bold mt-0.5">Use Code: <span className="text-brand-red text-xs">{billPromoCode}</span></p>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                             <div className="w-[45%]">
@@ -381,13 +401,13 @@
                                         </div>
                                     </div>
 
-                                    <div className="grid grid-cols-2 gap-4 mb-4">
+                                    <div className="grid grid-cols-3 gap-4 mb-4">
                                         <div><label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Invoice No.</label><input type="text" value={billInvoice} onChange={e=>setBillInvoice(e.target.value)} className="w-full p-2 border rounded focus:ring-2 outline-none" /></div>
                                         <div><label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Date</label><input type="date" value={billDate} onChange={e=>setBillDate(e.target.value)} className="w-full p-2 border rounded focus:ring-2 outline-none" /></div>
-                                        <div><label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Customer Name</label><input type="text" value={billCustomerName} onChange={e=>setBillCustomerName(e.target.value)} placeholder="Walk-in Customer" className="w-full p-2 border rounded focus:ring-2 outline-none" /></div>
-                                        <div><label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Phone Number</label><input type="text" value={billCustomerPhone} onChange={e=>setBillCustomerPhone(e.target.value)} placeholder="Optional" className="w-full p-2 border rounded focus:ring-2 outline-none" /></div>
+                                        <div className="col-span-3"><label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Customer Name</label><input type="text" value={billCustomerName} onChange={e=>setBillCustomerName(e.target.value)} placeholder="Walk-in Customer" className="w-full p-2 border rounded focus:ring-2 outline-none" /></div>
+                                        <div className="col-span-3"><label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Phone Number</label><input type="text" value={billCustomerPhone} onChange={e=>setBillCustomerPhone(e.target.value)} placeholder="Optional" className="w-full p-2 border rounded focus:ring-2 outline-none" /></div>
                                         
-                                        <div className="col-span-2">
+                                        <div className="col-span-3">
                                             <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Delivery Type</label>
                                             <select value={billDelivery} onChange={e=>setBillDelivery(e.target.value)} className="w-full p-2.5 border rounded focus:ring-2 focus:ring-indigo-500 outline-none bg-white font-bold text-indigo-700">
                                                 <option value="Store Walk-in">🛍️ Store Walk-in</option>
@@ -397,7 +417,7 @@
                                         
                                         {/* Courier Extras (Includes Address for Label generation) */}
                                         {billDelivery === 'Courier' && (
-                                            <div className="col-span-2 grid grid-cols-2 gap-4 bg-indigo-50 p-4 rounded-lg border border-indigo-200">
+                                            <div className="col-span-3 grid grid-cols-2 gap-4 bg-indigo-50 p-4 rounded-lg border border-indigo-200">
                                                 <div><label className="block text-xs font-semibold text-indigo-700 uppercase mb-1">Select Courier</label><select value={billCourier} onChange={e=>setBillCourier(e.target.value)} className="w-full p-2 border border-indigo-200 rounded bg-white outline-none"><option value="Professional Courier">Professional Courier</option><option value="ST Courier">ST Courier</option><option value="India Post">India Post</option></select></div>
                                                 <div><label className="block text-xs font-semibold text-indigo-700 uppercase mb-1">Tracking ID</label><input type="text" value={billTracking} onChange={e=>setBillTracking(e.target.value)} placeholder="Tracking No." className="w-full p-2 border border-indigo-200 rounded bg-white outline-none" /></div>
                                                 <div className="col-span-2">
@@ -423,9 +443,19 @@
                                         </div>
                                     </div>
 
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div><label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Payment Mode</label><select value={billPayment} onChange={e=>setBillPayment(e.target.value)} className="w-full p-2 border rounded outline-none bg-white"><option value="Cash">Cash</option><option value="GPay / UPI">GPay / UPI</option><option value="Card">Card</option></select></div>
-                                        <div><label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Discount Amount (₹)</label><input type="number" min="0" value={billDiscount} onChange={e=>setBillDiscount(e.target.value)} className="w-full p-2 border rounded outline-none" /></div>
+                                    <div className="grid grid-cols-3 gap-4">
+                                        <div><label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Payment</label><select value={billPayment} onChange={e=>setBillPayment(e.target.value)} className="w-full p-2 border rounded outline-none bg-white"><option value="Cash">Cash</option><option value="GPay / UPI">GPay / UPI</option><option value="Card">Card</option></select></div>
+                                        <div><label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Discount (₹)</label><input type="number" min="0" value={billDiscount} onChange={e=>setBillDiscount(e.target.value)} className="w-full p-2 border rounded outline-none" /></div>
+                                        <div>
+                                            <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Next Promo</label>
+                                            <select value={billPromoCode} onChange={e=>setBillPromoCode(e.target.value)} className="w-full p-2 border rounded outline-none bg-white">
+                                                <option value="NO CODE">NO CODE</option>
+                                                <option value="FREESHIP">FREESHIP</option>
+                                                <option value="GET350 SHIRT">GET350 SHIRT</option>
+                                                <option value="10%DIS">10%DIS</option>
+                                                <option value="5%DIS">5%DIS</option>
+                                            </select>
+                                        </div>
                                     </div>
                                     <button onClick={handlePrint} className="w-full mt-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 px-4 rounded-lg shadow-lg flex justify-center items-center gap-2 transition-transform transform hover:scale-[1.01]">
                                         🖨️ Print Bill {billDelivery === 'Courier' ? '& Shipping Label' : ''}
@@ -448,8 +478,8 @@
                                     {/* Copy 3: Shipping Label (Conditional based on Delivery Mode) */}
                                     {billDelivery === 'Courier' && (
                                         <div className="a5-container relative print:scale-100 transform origin-top scale-[0.85] md:scale-95 shadow-2xl transition-all print:flex">
-                                            <div className="absolute top-0 right-0 bg-indigo-600 text-white text-[10px] px-2 py-1 font-bold uppercase z-10">Shipping Label</div>
                                             <LabelContent 
+                                                copyLabel="Shipping Label"
                                                 orderId={billTracking || billInvoice} 
                                                 toName={billCustomerName} 
                                                 toAddress={billCustomerAddress} 

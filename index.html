@@ -22,7 +22,7 @@
         /* Strict A5 Container */
         .a5-container {
             width: 148mm;
-            height: 209.5mm;
+            height: 210mm;
             background: white;
             box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
             margin: 0 auto;
@@ -236,16 +236,24 @@
             };
 
             // Billing Calculations
-            const updateBillItem = (id, field, value) => setBillItems(billItems.map(i => i.id === id ? { ...i, [field]: field === 'particular' ? value : (parseFloat(value) || 0) } : i));
+            const updateBillItem = (id, field, value) => {
+                setBillItems(billItems.map(i => {
+                    if (i.id === id) {
+                        return { ...i, [field]: field === 'particular' ? value : (value === '' ? '' : parseFloat(value)) };
+                    }
+                    return i;
+                }));
+            };
+            
             const addBillItem = () => setBillItems([...billItems, { id: Date.now(), particular: '', qty: 1, rate: 0 }]);
             const removeBillItem = (id) => setBillItems(billItems.filter(i => i.id !== id));
             
-            const subTotal = billItems.reduce((acc, item) => acc + (item.qty * item.rate), 0);
-            const grandTotal = Math.round(subTotal - billDiscount);
-            const totalQty = billItems.reduce((acc, item) => acc + Number(item.qty), 0);
+            const subTotal = billItems.reduce((acc, item) => acc + ((item.qty || 0) * (item.rate || 0)), 0);
+            const grandTotal = Math.round(subTotal - (Number(billDiscount) || 0));
+            const totalQty = billItems.reduce((acc, item) => acc + Number(item.qty || 0), 0);
 
-            // Reusable Bill Component
-            const BillContent = () => {
+            // Reusable Bill Function (Optimized to prevent React re-mounting issues)
+            const renderBillContent = (copyLabel) => {
                 let deliveryText = billDelivery === 'Courier' ? (billTracking ? `${billCourier} (Track: ${billTracking})` : billCourier) : 'Store Walk-in';
                 let terms = billDelivery === 'Courier' 
                     ? ["Unboxing video is mandatory for any claims.", "Exchange for damaged/wrong items within 2 days of delivery.", "Shipping charges are non-refundable."] 
@@ -253,6 +261,12 @@
 
                 return (
                     <div className="border-2 border-gray-900 w-full h-full flex flex-col relative p-4 bg-white box-border text-xs">
+                        {/* Copy Type Label (Inside Paper) */}
+                        {copyLabel && (
+                            <div className="absolute top-0 right-0 bg-gray-900 text-white text-[9px] px-2 py-0.5 font-bold uppercase">
+                                {copyLabel}
+                            </div>
+                        )}
                         {/* Header */}
                         <div className="text-center border-b-2 border-gray-900 pb-3 mb-3 mt-2 shrink-0">
                             
@@ -318,11 +332,16 @@
                                     <p className="font-bold text-gray-800 mb-1">Terms & Conditions:</p>
                                     <ul className="list-disc pl-3 space-y-0.5">{terms.map((t, i) => <li key={i}>{t}</li>)}</ul>
                                     <p className="mt-2 text-xs italic">Thank you for shopping with us!</p>
+                                    <div className="mt-2 border-2 border-dashed border-gray-400 p-1.5 rounded bg-gray-50 text-center">
+                                        <p className="font-bold text-gray-800 text-[10px] uppercase">🎁 Online Special</p>
+                                        <p className="text-[9px] text-gray-600 mt-0.5">Free Shipping on purchases above ₹500</p>
+                                        <p className="text-[10px] font-bold mt-0.5">Use Code: <span className="text-brand-red text-xs">FREESHIP</span></p>
+                                    </div>
                                 </div>
                             </div>
                             <div className="w-[45%]">
                                 <div className="flex justify-between py-1"><span className="font-semibold">Sub Total:</span><span>₹ {subTotal.toFixed(2)}</span></div>
-                                {billDiscount > 0 && <div className="flex justify-between py-1 text-gray-700"><span>Discount:</span><span>- ₹ {billDiscount.toFixed(2)}</span></div>}
+                                {billDiscount > 0 && <div className="flex justify-between py-1 text-gray-700"><span>Discount:</span><span>- ₹ {Number(billDiscount).toFixed(2)}</span></div>}
                                 <div className="flex justify-between text-sm font-bold border-t border-b border-gray-900 py-2 mt-1 bg-gray-50 px-1"><span>Grand Total:</span><span>₹ {grandTotal.toFixed(2)}</span></div>
                                 <div className="flex justify-between text-[11px] font-semibold text-gray-800 mt-1 px-1 border-b border-gray-300 pb-1"><span>Payment:</span><span className="uppercase">{billPayment}</span></div>
                                 <div className="text-[10px] text-gray-500 mt-1 px-1">Total Qty: {totalQty}</div>
@@ -418,14 +437,12 @@
                                     
                                     {/* Copy 1: Buyer's Bill */}
                                     <div className="a5-container relative print:scale-100 transform origin-top scale-[0.85] md:scale-95 shadow-2xl transition-all">
-                                        <div className="absolute top-0 right-0 bg-gray-900 text-white text-[10px] px-2 py-1 font-bold uppercase z-10">Original - Buyer's Copy</div>
-                                        <BillContent />
+                                        {renderBillContent("Original - Buyer's Copy")}
                                     </div>
 
                                     {/* Copy 2: Shop Bill (Hidden on screen to save space, visible on print) */}
                                     <div className="a5-container relative hidden print:flex">
-                                        <div className="absolute top-0 right-0 bg-gray-900 text-white text-[10px] px-2 py-1 font-bold uppercase z-10">Duplicate - Shop Copy</div>
-                                        <BillContent />
+                                        {renderBillContent("Duplicate - Shop Copy")}
                                     </div>
 
                                     {/* Copy 3: Shipping Label (Conditional based on Delivery Mode) */}

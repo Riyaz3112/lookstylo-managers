@@ -57,6 +57,16 @@
         }
         .text-brand-red { color: #d32f2f; }
         .text-brand-blue { color: #1976d2; }
+
+        /* Remove number input spinners */
+        input[type=number]::-webkit-inner-spin-button, 
+        input[type=number]::-webkit-outer-spin-button { 
+            -webkit-appearance: none; 
+            margin: 0; 
+        }
+        input[type=number] {
+            -moz-appearance: textfield;
+        }
     </style>
 </head>
 <body>
@@ -172,8 +182,14 @@
             const [sheetUrl, setSheetUrl] = useState(localStorage.getItem('googleSheetUrl') || '');
             const [serverUrl, setServerUrl] = useState(localStorage.getItem('serverUrl') || '/api/save-label');
 
+            // Helper to generate IDs like LSF-APR-001
+            const generateMonthlyId = (suffix) => {
+                const month = new Date().toLocaleString('en-US', { month: 'short' }).toUpperCase();
+                return `LSF-${month}-${suffix}`;
+            };
+
             // --- GENERATOR STATE ---
-            const [orderId, setOrderId] = useState('LSF-MAR-40');
+            const [orderId, setOrderId] = useState(generateMonthlyId('001'));
             const [toName, setToName] = useState('HAKKEM');
             const [toAddress, setToAddress] = useState('Poolankudiyiruppu Tenkasi\nTamilnadu -627813');
             const [toPhone, setToPhone] = useState('9514598301 - 9952214334');
@@ -182,7 +198,7 @@
             const [billPhone, setBillPhone] = useState('');
 
             // --- BILLING STATE ---
-            const [billInvoice, setBillInvoice] = useState('1001');
+            const [billInvoice, setBillInvoice] = useState(generateMonthlyId('001'));
             const [billDate, setBillDate] = useState(new Date().toISOString().split('T')[0]);
             const [billCustomerName, setBillCustomerName] = useState('');
             const [billCustomerPhone, setBillCustomerPhone] = useState('');
@@ -190,10 +206,39 @@
             const [billDelivery, setBillDelivery] = useState('Store Walk-in');
             const [billCourier, setBillCourier] = useState('Professional Courier');
             const [billTracking, setBillTracking] = useState('');
-            const [billPayment, setBillPayment] = useState('Cash');
             const [billDiscount, setBillDiscount] = useState(0);
             const [billPromoCode, setBillPromoCode] = useState('NO CODE');
             const [billItems, setBillItems] = useState([{ id: Date.now(), particular: '', qty: 1, rate: 0 }]);
+            
+            // --- NEW: SPLIT PAYMENT STATE ---
+            const [paidGpay, setPaidGpay] = useState(0);
+            const [paidCash, setPaidCash] = useState(0);
+
+            // --- INBUILT PARTICULARS ---
+            const PRESET_ITEMS = {
+                'IPL JERSEY MI - M': 280,
+                'IPL JERSEY MI - L': 280,
+                'IPL JERSEY MI - XL': 280,
+                'IPL JERSEY RCB - M': 280,
+                'IPL JERSEY RCB - L': 280,
+                'IPL JERSEY RCB - XL': 280,
+                'IPL JERSEY CSK - M': 280,
+                'IPL JERSEY CSK - L': 280,
+                'IPL JERSEY CSK - XL': 280,
+                'FOOT BALL JERSEY - M': 280,
+                'FOOT BALL JERSEY - L': 280,
+                'FOOT BALL JERSEY - XL': 280,
+                'BACKPRINT DROPSHOLDER - M': 380,
+                'BACKPRINT DROPSHOLDER - L': 380,
+                'BACKPRINT DROPSHOLDER - XL': 380,
+                'BACKPRINT DROPSHOLDER - XXL': 380,
+                'DIS FAB POLO 0838 - M': 500,
+                'DIS FAB POLO 0838 - L': 500,
+                'DIS FAB POLO 0838 - XL': 500,
+                'NET FOLDING DROPSHOLDER 0839 - M': 450,
+                'NET FOLDING DROPSHOLDER 0839 - L': 450,
+                'NET FOLDING DROPSHOLDER 0839 - XL': 450,
+            };
 
             // --- SCANNER STATE ---
             const [scanResult, setScanResult] = useState(null);
@@ -246,7 +291,17 @@
             const updateBillItem = (id, field, value) => {
                 setBillItems(billItems.map(i => {
                     if (i.id === id) {
-                        return { ...i, [field]: field === 'particular' ? value : (value === '' ? '' : parseFloat(value)) };
+                        let updated = { ...i, [field]: field === 'particular' ? value : (value === '' ? '' : parseFloat(value)) };
+                        
+                        // Auto-fill price if a preset item is selected
+                        if (field === 'particular') {
+                            const upperVal = value.toUpperCase();
+                            if (PRESET_ITEMS[upperVal]) {
+                                updated.rate = PRESET_ITEMS[upperVal];
+                            }
+                        }
+                        
+                        return updated;
                     }
                     return i;
                 }));
@@ -256,8 +311,14 @@
             const removeBillItem = (id) => setBillItems(billItems.filter(i => i.id !== id));
             
             const subTotal = billItems.reduce((acc, item) => acc + ((item.qty || 0) * (item.rate || 0)), 0);
-            const grandTotal = Math.round(subTotal - (Number(billDiscount) || 0));
+            const discountAmount = subTotal * ((Number(billDiscount) || 0) / 100);
+            const totalAfterDiscount = subTotal - discountAmount;
+            const grandTotal = Math.round(totalAfterDiscount);
+            const roundOffAmount = grandTotal - totalAfterDiscount;
             const totalQty = billItems.reduce((acc, item) => acc + Number(item.qty || 0), 0);
+            
+            // --- NEW: BALANCE CALCULATION ---
+            const balanceAmount = grandTotal - (Number(paidGpay) || 0) - (Number(paidCash) || 0);
 
             // Reusable Bill Function
             const renderBillContent = (copyLabel) => {
@@ -361,9 +422,18 @@
                             </div>
                             <div className="w-[45%]">
                                 <div className="flex justify-between py-1"><span className="font-semibold">Sub Total:</span><span>₹ {subTotal.toFixed(2)}</span></div>
-                                {billDiscount > 0 && <div className="flex justify-between py-1 text-gray-700"><span>Discount:</span><span>- ₹ {Number(billDiscount).toFixed(2)}</span></div>}
-                                <div className="flex justify-between text-sm font-bold border-t border-b border-gray-900 py-2 mt-1 bg-gray-50 px-1"><span>Grand Total:</span><span>₹ {grandTotal.toFixed(2)}</span></div>
-                                <div className="flex justify-between text-[11px] font-semibold text-gray-800 mt-1 px-1 border-b border-gray-300 pb-1"><span>Payment:</span><span className="uppercase">{billPayment}</span></div>
+                                {billDiscount > 0 && <div className="flex justify-between py-1 text-gray-700"><span>Discount ({billDiscount}%):</span><span>- ₹ {discountAmount.toFixed(2)}</span></div>}
+                                {roundOffAmount !== 0 && <div className="flex justify-between py-1 text-gray-700"><span>Round Off:</span><span>{roundOffAmount > 0 ? '+ ' : '- '}₹ {Math.abs(roundOffAmount).toFixed(2)}</span></div>}
+                                <div className="flex justify-between text-sm font-bold border-t border-b border-gray-900 py-2 mt-1 bg-gray-50 px-1 mb-1"><span>Grand Total:</span><span>₹ {grandTotal.toFixed(2)}</span></div>
+                                
+                                {/* New Split Payment Output */}
+                                <div className="flex justify-between text-[11px] font-semibold text-gray-800 px-1 py-0.5"><span>Paid (GPay):</span><span>₹ {(Number(paidGpay) || 0).toFixed(2)}</span></div>
+                                <div className="flex justify-between text-[11px] font-semibold text-gray-800 px-1 py-0.5"><span>Paid (Cash):</span><span>₹ {(Number(paidCash) || 0).toFixed(2)}</span></div>
+                                
+                                <div className="flex justify-between text-[12px] font-bold text-gray-900 mt-1 px-1 border-t border-b border-gray-300 py-1 mb-1">
+                                    <span>Balance:</span><span>₹ {balanceAmount.toFixed(2)}</span>
+                                </div>
+
                                 <div className="text-[10px] text-gray-500 mt-1 px-1">Total Qty: {totalQty}</div>
                             </div>
                         </div>
@@ -431,9 +501,12 @@
                                     <div className="border border-gray-200 rounded-xl overflow-hidden mb-4">
                                         <div className="bg-gray-50 px-4 py-3 border-b border-gray-200"><h3 className="font-semibold text-gray-700">Particulars</h3></div>
                                         <div className="p-4 space-y-3">
+                                            <datalist id="preset-items">
+                                                {Object.keys(PRESET_ITEMS).map(item => <option key={item} value={item} />)}
+                                            </datalist>
                                             {billItems.map(item => (
                                                 <div key={item.id} className="flex gap-2">
-                                                    <input type="text" placeholder="Item Name" value={item.particular} onChange={e=>updateBillItem(item.id, 'particular', e.target.value)} className="flex-grow p-2 border rounded text-sm uppercase outline-none focus:ring-1 focus:ring-indigo-500" />
+                                                    <input list="preset-items" type="text" placeholder="Item Name" value={item.particular} onChange={e=>updateBillItem(item.id, 'particular', e.target.value)} className="flex-grow p-2 border rounded text-sm uppercase outline-none focus:ring-1 focus:ring-indigo-500" />
                                                     <input type="number" min="1" value={item.qty} onChange={e=>updateBillItem(item.id, 'qty', e.target.value)} className="w-16 p-2 border rounded text-sm outline-none focus:ring-1 focus:ring-indigo-500" />
                                                     <input type="number" min="0" value={item.rate} placeholder="Rate" onChange={e=>updateBillItem(item.id, 'rate', e.target.value)} className="w-24 p-2 border rounded text-sm outline-none focus:ring-1 focus:ring-indigo-500" />
                                                     <button onClick={()=>removeBillItem(item.id)} className={"text-red-500 hover:bg-red-50 px-2 rounded " + (billItems.length === 1 ? 'invisible' : '')}>✕</button>
@@ -443,11 +516,12 @@
                                         </div>
                                     </div>
 
-                                    <div className="grid grid-cols-3 gap-4">
-                                        <div><label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Payment</label><select value={billPayment} onChange={e=>setBillPayment(e.target.value)} className="w-full p-2 border rounded outline-none bg-white"><option value="Cash">Cash</option><option value="GPay / UPI">GPay / UPI</option><option value="Card">Card</option></select></div>
-                                        <div><label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Discount (₹)</label><input type="number" min="0" value={billDiscount} onChange={e=>setBillDiscount(e.target.value)} className="w-full p-2 border rounded outline-none" /></div>
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
+                                        <div><label className="block text-xs font-semibold text-gray-700 uppercase mb-1">Discount (%)</label><input type="number" min="0" max="100" value={billDiscount} onChange={e=>setBillDiscount(e.target.value)} className="w-full p-2 border rounded outline-none" /></div>
+                                        <div><label className="block text-xs font-semibold text-gray-700 uppercase mb-1">Paid GPay (₹)</label><input type="number" min="0" value={paidGpay} onChange={e=>setPaidGpay(e.target.value)} className="w-full p-2 border rounded outline-none" /></div>
+                                        <div><label className="block text-xs font-semibold text-gray-700 uppercase mb-1">Paid Cash (₹)</label><input type="number" min="0" value={paidCash} onChange={e=>setPaidCash(e.target.value)} className="w-full p-2 border rounded outline-none" /></div>
                                         <div>
-                                            <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Next Promo</label>
+                                            <label className="block text-xs font-semibold text-gray-700 uppercase mb-1">Next Promo</label>
                                             <select value={billPromoCode} onChange={e=>setBillPromoCode(e.target.value)} className="w-full p-2 border rounded outline-none bg-white">
                                                 <option value="NO CODE">NO CODE</option>
                                                 <option value="FREESHIP">FREESHIP</option>
@@ -457,6 +531,12 @@
                                             </select>
                                         </div>
                                     </div>
+                                    
+                                    <div className="mt-4 flex justify-between items-center px-2">
+                                        <span className="text-gray-600 font-bold uppercase text-sm">Balance Remaining:</span>
+                                        <span className={"text-2xl font-extrabold " + (balanceAmount > 0 ? "text-red-600" : "text-green-600")}>₹ {balanceAmount.toFixed(2)}</span>
+                                    </div>
+
                                     <button onClick={handlePrint} className="w-full mt-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 px-4 rounded-lg shadow-lg flex justify-center items-center gap-2 transition-transform transform hover:scale-[1.01]">
                                         🖨️ Print Bill {billDelivery === 'Courier' ? '& Shipping Label' : ''}
                                     </button>

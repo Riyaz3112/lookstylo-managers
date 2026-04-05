@@ -4,14 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lookstylo Fashion</title>
-    <!-- React & ReactDOM -->
     <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
-    <!-- Babel for JSX -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- JsBarcode & QRCode & Scanner -->
     <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode/html5-qrcode.min.js" type="text/javascript"></script>
@@ -85,29 +81,6 @@
         const { useState, useEffect, useRef } = React;
 
         // --- ICON COMPONENTS ---
-        const LookstyloLogo = ({ className = "w-20 h-20" }) => {
-            const [imgError, setImgError] = useState(false);
-
-            if (imgError) {
-                // Fallback UI when the local image cannot be found by the browser
-                return (
-                    <div className={`${className} flex flex-col items-center justify-center border-2 border-dashed border-gray-400 rounded-full bg-gray-50 p-2 text-center`}>
-                        <span className="font-serif font-black text-xl text-gray-800 leading-none">LS</span>
-                        <span className="text-[7px] font-bold text-gray-500 uppercase mt-1 leading-tight">Image<br/>Missing</span>
-                    </div>
-                );
-            }
-
-            return (
-                <img 
-                    src="LookStylo_Circular_Fixed(1).jpg" 
-                    alt="Lookstylo Logo" 
-                    className={`${className} object-contain mix-blend-multiply`}
-                    onError={() => setImgError(true)}
-                />
-            );
-        };
-
         const InstagramIcon = ({ className = "w-5 h-5" }) => (
             <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect>
@@ -173,7 +146,7 @@
                 {/* Header */}
                 <div className="flex items-center justify-between border-b-2 border-gray-900 pb-4 mb-4">
                     <div className="w-1/4 flex flex-col items-start">
-                        <LookstyloLogo className="w-20 h-20 mix-blend-multiply" />
+                        {/* Logo completely removed from here */}
                     </div>
                     <div className="text-center flex-1 px-2">
                         <div className="text-brand-red font-extrabold text-3xl tracking-wide uppercase">LOOKSTYLO FASHION</div>
@@ -189,7 +162,7 @@
                     <div className="mb-6">
                         <h3 className="font-extrabold text-2xl uppercase mb-1">FROM:</h3>
                         <div className="font-bold text-lg leading-snug uppercase">
-                            LOOKSTLYO FASHION,<br/>SHOP NO 02, OPPOSITE POST OFFICE<br/>PAKKIRITHAKA JOLARPATTAI - 635851.<br/>📞 8680857511
+                            LOOKSTYLO FASHION,<br/>SHOP NO 02, OPPOSITE POST OFFICE<br/>PAKKIRITHAKA JOLARPATTAI - 635851.<br/>📞 8680857511
                         </div>
                     </div>
                     
@@ -268,8 +241,6 @@
             const [isFormattingAddress, setIsFormattingAddress] = useState(false);
             const [isGeneratingMsg, setIsGeneratingMsg] = useState(false);
             const [generatedWhatsapp, setGeneratedWhatsapp] = useState('');
-            const [rawOrderText, setRawOrderText] = useState('');
-            const [isParsingOrder, setIsParsingOrder] = useState(false);
 
             const callGeminiAPI = async (prompt, imageData = null) => {
                 const apiKey = ""; 
@@ -397,120 +368,6 @@
                 setIsFormattingAddress(false);
             };
 
-            const handleGenerateWhatsApp = async () => {
-                setIsGeneratingMsg(true);
-                const itemList = billItems.map(i => `${i.qty}x ${i.particular}`).join(', ');
-                const calcSubTotal = billItems.reduce((acc, item) => acc + ((item.qty || 0) * (item.rate || 0)), 0);
-                const calcGrandTotal = Math.round(calcSubTotal - (calcSubTotal * ((Number(billDiscount) || 0) / 100)));
-                
-                const prompt = `Write a friendly, professional WhatsApp message from 'Lookstylo Fashion' to customer '${billCustomerName || 'Customer'}'. 
-                Order items: ${itemList}. 
-                Grand Total: ₹${calcGrandTotal}. 
-                Delivery: ${billDelivery === 'Courier' ? `Courier (${billCourier}) Tracking ID: ${billTracking || 'Pending'}. Mention unboxing video is mandatory for claims.` : 'Ready for store pickup.'}
-                Keep it concise, use a few appropriate emojis, format nicely for WhatsApp (using * for bolding key info), and thank them. Do not include placeholder brackets, act as if this is the final message to send.`;
-                
-                const msg = await callGeminiAPI(prompt);
-                if (msg) setGeneratedWhatsapp(msg.trim());
-                setIsGeneratingMsg(false);
-            };
-
-            const copyToClipboard = () => {
-                const el = document.createElement('textarea');
-                el.value = generatedWhatsapp;
-                document.body.appendChild(el);
-                el.select();
-                document.execCommand('copy');
-                document.body.removeChild(el);
-            };
-
-            const processOrderJson = (responseText) => {
-                const cleanedJson = responseText.replace(/```json/gi, '').replace(/```/g, '').trim();
-                const parsed = JSON.parse(cleanedJson);
-                
-                if (parsed.customerName) setBillCustomerName(parsed.customerName);
-                if (parsed.phone) setBillCustomerPhone(parsed.phone);
-                if (parsed.address) setBillCustomerAddress(parsed.address);
-                if (parsed.items && parsed.items.length > 0) {
-                    const newItems = parsed.items.map((item, index) => {
-                        let rate = 0;
-                        const upperVal = (item.particular || '').toUpperCase();
-                        if (PRESET_ITEMS[upperVal]) rate = PRESET_ITEMS[upperVal];
-                        return {
-                            id: Date.now() + index,
-                            particular: upperVal,
-                            qty: item.qty || 1,
-                            rate: rate
-                        };
-                    });
-                    setBillItems(newItems);
-                }
-            };
-
-            const handleParseOrder = async () => {
-                if (!rawOrderText.trim()) return;
-                setIsParsingOrder(true);
-                
-                const prompt = `Extract order details from the following customer message and output ONLY a raw JSON object (no markdown formatting, no \`\`\`json blocks).
-                Ensure keys exactly match this format:
-                {
-                  "customerName": "Extracted name or empty string",
-                  "phone": "Extracted phone or empty string",
-                  "address": "Extracted address or empty string",
-                  "items": [
-                    { "particular": "ITEM NAME", "qty": 1 }
-                  ]
-                }
-                Try to map items to these known formats if they are similar: ${Object.keys(PRESET_ITEMS).join(', ')}.
-                Customer Message: "${rawOrderText}"`;
-
-                try {
-                    const responseText = await callGeminiAPI(prompt);
-                    if (responseText) {
-                        processOrderJson(responseText);
-                        setRawOrderText(''); // Clear on success
-                    }
-                } catch (error) {
-                    console.error("Failed to parse order", error);
-                    alert("Could not automatically parse the order details. Please check the raw text and try again.");
-                }
-                setIsParsingOrder(false);
-            };
-
-            const handleImageUpload = async (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-                setIsParsingOrder(true);
-
-                const reader = new FileReader();
-                reader.onloadend = async () => {
-                    const base64String = reader.result.split(',')[1];
-                    const prompt = `Extract order details from this chat screenshot and output ONLY a raw JSON object (no markdown formatting, no \`\`\`json blocks).
-                    Ensure keys exactly match this format:
-                    {
-                      "customerName": "Extracted name or empty string",
-                      "phone": "Extracted phone or empty string",
-                      "address": "Extracted address or empty string",
-                      "items": [
-                        { "particular": "ITEM NAME", "qty": 1 }
-                      ]
-                    }
-                    Try to map items to these known formats if they are similar: ${Object.keys(PRESET_ITEMS).join(', ')}.`;
-                    
-                    try {
-                        const responseText = await callGeminiAPI(prompt, { mimeType: file.type, data: base64String });
-                        if (responseText) {
-                            processOrderJson(responseText);
-                        }
-                    } catch (error) {
-                        console.error("Failed to parse image", error);
-                        alert("Could not extract order from the image. Please try a clearer screenshot.");
-                    }
-                    setIsParsingOrder(false);
-                    e.target.value = ''; // reset file input
-                };
-                reader.readAsDataURL(file);
-            };
-
             const handleGenerateReview = async () => {
                 setIsGeneratingMsg(true);
                 const prompt = `Write a friendly, short WhatsApp message from 'Lookstylo Fashion' to customer '${billCustomerName || 'Customer'}'. 
@@ -585,6 +442,7 @@
                         )}
                         {/* Header */}
                         <div className="text-center border-b-2 border-gray-900 pb-3 mb-3 mt-2 shrink-0 flex flex-col items-center">
+                            {/* Logo completely removed from here */}
                             <h1 className="text-3xl font-extrabold tracking-wider text-gray-900 leading-none mb-1 font-serif mt-1">LOOKSTYLO FASHION</h1>
                             <p className="text-[11px] text-gray-800 leading-tight mb-1">
                                 Shop No. 2, opposite post office, Tirupathur Main Road,<br/>
@@ -683,6 +541,7 @@
                     <nav id="no-print" className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-4 shadow-xl sticky top-0 z-50 border-b border-indigo-900/50">
                         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
                             <h1 className="text-2xl font-black tracking-tight flex items-center gap-3 bg-clip-text text-transparent bg-gradient-to-r from-white to-indigo-200">
+                                {/* Logo completely removed from here */}
                                 Lookstylo Fashion
                             </h1>
                             <div className="flex flex-wrap justify-center gap-2 md:gap-3">

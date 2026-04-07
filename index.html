@@ -15,7 +15,7 @@
     <style>
         body { background-color: #f8fafc; font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         
-        /* Strict A5 Container */
+        /* Strict A5 Container (Screen View) */
         .a5-container {
             width: 148mm;
             height: 210mm;
@@ -32,28 +32,72 @@
             border-radius: 4px;
         }
 
-        /* Print Settings */
+        /* Strict Print Settings for A5 */
         @media print {
-            @page { size: A5 portrait; margin: 0; }
-            body, html { background: white !important; margin: 0 !important; padding: 0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            #no-print { display: none !important; }
-            
-            #print-section { 
-                position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 0; 
-                display: flex !important; flex-direction: column; align-items: center;
-                gap: 0 !important;
-                background: white !important;
+            @page { 
+                size: 148mm 210mm; /* Exact A5 Dimensions */
+                margin: 0; 
             }
+            body, html { 
+                background: white !important; 
+                margin: 0 !important; 
+                padding: 0 !important; 
+                height: auto !important;
+                min-height: auto !important;
+                -webkit-print-color-adjust: exact; 
+                print-color-adjust: exact; 
+            }
+            .no-print { display: none !important; }
+
+            /* Disable flex/padding/overflow on wrappers during print */
+            #root, .min-h-screen, main {
+                display: block !important;
+                padding: 0 !important;
+                margin: 0 !important;
+                max-width: none !important;
+                height: auto !important;
+                min-height: 0 !important;
+                overflow: visible !important;
+            }
+            
+            .print-section { 
+                position: static !important; 
+                width: 100% !important; 
+                margin: 0 !important; 
+                padding: 0 !important; 
+                display: block !important; 
+                background: white !important;
+                box-shadow: none !important;
+                border: none !important;
+                overflow: visible !important;
+            }
+            
             .a5-container {
-                box-shadow: none !important; border: none !important;
-                margin: 0 !important; padding: 8mm !important;
-                page-break-after: always; page-break-inside: avoid;
+                width: 148mm !important;
+                height: 209mm !important; /* Shave 1mm to prevent overflow blank page */
+                box-sizing: border-box !important;
+                box-shadow: none !important; 
+                border: none !important;
+                margin: 0 !important; 
+                padding: 8mm !important; /* Safe printable margin */
+                page-break-after: always; 
+                break-after: page;
+                page-break-inside: avoid;
                 transform: none !important;
                 overflow: hidden !important;
                 border-radius: 0 !important;
+                display: flex !important;
             }
+
+            .a5-container:last-of-type,
+            .print-section > div:last-child {
+                page-break-after: auto !important; /* Prevent blank page at the end */
+                break-after: auto !important;
+            }
+
             .print\:flex { display: flex !important; }
         }
+        
         .text-brand-red { color: #d32f2f; }
         .text-brand-blue { color: #1976d2; }
 
@@ -205,14 +249,23 @@
             const [sheetUrl, setSheetUrl] = useState(localStorage.getItem('googleSheetUrl') || '');
             const [serverUrl, setServerUrl] = useState(localStorage.getItem('serverUrl') || '/api/save-label');
 
-            // Helper to generate IDs like LSF-APR-001
-            const generateMonthlyId = (suffix) => {
-                const month = new Date().toLocaleString('en-US', { month: 'short' }).toUpperCase();
-                return `LSF-${month}-${suffix}`;
+            // Helper to generate Auto Incrementing IDs based on Month/Year
+            const getNextInvoiceId = (dateStr) => {
+                const d = new Date(dateStr || new Date());
+                if (isNaN(d.getTime())) return '';
+                const month = d.toLocaleString('en-US', { month: 'short' }).toUpperCase();
+                const year = d.getFullYear();
+                const key = `${month}-${year}`;
+
+                const counters = JSON.parse(localStorage.getItem('invoiceCounters') || '{}');
+                const currentSeq = counters[key] || 1;
+                return `LSF-${month}-${String(currentSeq).padStart(3, '0')}`;
             };
 
+            const todayStr = new Date().toISOString().split('T')[0];
+
             // --- GENERATOR STATE ---
-            const [orderId, setOrderId] = useState(generateMonthlyId('001'));
+            const [orderId, setOrderId] = useState(getNextInvoiceId(todayStr));
             const [toName, setToName] = useState('');
             const [toAddress, setToAddress] = useState('');
             const [toPhone, setToPhone] = useState('');
@@ -221,8 +274,8 @@
             const [billPhone, setBillPhone] = useState('');
 
             // --- BILLING STATE ---
-            const [billInvoice, setBillInvoice] = useState(generateMonthlyId('001'));
-            const [billDate, setBillDate] = useState(new Date().toISOString().split('T')[0]);
+            const [billDate, setBillDate] = useState(todayStr);
+            const [billInvoice, setBillInvoice] = useState(getNextInvoiceId(todayStr));
             const [billCustomerName, setBillCustomerName] = useState('');
             const [billCustomerPhone, setBillCustomerPhone] = useState('');
             const [billCustomerAddress, setBillCustomerAddress] = useState('');
@@ -236,6 +289,11 @@
             // --- NEW: SPLIT PAYMENT STATE ---
             const [paidGpay, setPaidGpay] = useState(0);
             const [paidCash, setPaidCash] = useState(0);
+
+            // Effect: Auto-update Invoice Number when Date changes
+            useEffect(() => {
+                setBillInvoice(getNextInvoiceId(billDate));
+            }, [billDate]);
 
             // --- AI & GEMINI STATE ---
             const [isFormattingAddress, setIsFormattingAddress] = useState(false);
@@ -335,6 +393,43 @@
             }, [activeTab]);
 
             // Handlers
+            const handleNewBill = () => {
+                const d = new Date(billDate);
+                if (!isNaN(d.getTime())) {
+                    const month = d.toLocaleString('en-US', { month: 'short' }).toUpperCase();
+                    const year = d.getFullYear();
+                    const key = `${month}-${year}`;
+
+                    const counters = JSON.parse(localStorage.getItem('invoiceCounters') || '{}');
+                    const currentSeq = counters[key] || 1;
+                    
+                    // Increment sequence if the current auto-generated ID was used
+                    const expectedInvoice = `LSF-${month}-${String(currentSeq).padStart(3, '0')}`;
+                    if (billInvoice === expectedInvoice) {
+                        counters[key] = currentSeq + 1;
+                        localStorage.setItem('invoiceCounters', JSON.stringify(counters));
+                    }
+                }
+
+                // Reset forms
+                setBillCustomerName('');
+                setBillCustomerPhone('');
+                setBillCustomerAddress('');
+                setBillTracking('');
+                setBillDiscount(0);
+                setPaidGpay(0);
+                setPaidCash(0);
+                setBillPromoCode('NO CODE');
+                setBillItems([{ id: Date.now(), particular: '', qty: 1, rate: 0 }]);
+                
+                // Get fresh date and update IDs
+                const today = new Date().toISOString().split('T')[0];
+                setBillDate(today);
+                const nextId = getNextInvoiceId(today);
+                setBillInvoice(nextId);
+                setOrderId(nextId);
+            };
+
             const handlePrint = () => window.print();
             
             const handleSave = async () => {
@@ -362,7 +457,7 @@
             const handleFormatAddress = async () => {
                 if (!billCustomerAddress || billCustomerAddress.trim().length < 5) return;
                 setIsFormattingAddress(true);
-                const prompt = `Format this Indian shipping address neatly. Capitalize names/cities correctly, ensure logical line breaks (e.g., Name \\n Street/Locality \\n City, State - Pincode). Remove any messy characters. Return ONLY the formatted address text, no conversational filler. Address: ${billCustomerAddress}`;
+                const prompt = `Format this Indian shipping address neatly. Capitalize names/cities correctly, ensure logical line breaks (e.g., Name \n Street/Locality \n City, State - Pincode). Remove any messy characters. Return ONLY the formatted address text, no conversational filler. Address: ${billCustomerAddress}`;
                 const formatted = await callGeminiAPI(prompt);
                 if (formatted) setBillCustomerAddress(formatted.trim());
                 setIsFormattingAddress(false);
@@ -538,7 +633,7 @@
             return (
                 <div className="min-h-screen flex flex-col">
                     {/* Navigation - Hidden on Print */}
-                    <nav id="no-print" className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-4 shadow-xl sticky top-0 z-50 border-b border-indigo-900/50">
+                    <nav className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-4 shadow-xl sticky top-0 z-50 border-b border-indigo-900/50 no-print">
                         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
                             <h1 className="text-2xl font-black tracking-tight flex items-center gap-3 bg-clip-text text-transparent bg-gradient-to-r from-white to-indigo-200">
                                 {/* Logo completely removed from here */}
@@ -558,7 +653,7 @@
                         {/* -------------------- TAB: BILLING -------------------- */}
                         {activeTab === 'billing' && (
                             <>
-                                <div id="no-print" className="w-full lg:w-[55%] bg-white p-6 md:p-8 rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100 h-fit flex flex-col gap-8">
+                                <div className="w-full lg:w-[55%] bg-white p-6 md:p-8 rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100 h-fit flex flex-col gap-8 no-print">
                                     <div className="flex justify-between items-center border-b border-slate-100 pb-4">
                                         <div>
                                             <h2 className="text-3xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-indigo-700 to-purple-600">Billing</h2>
@@ -664,15 +759,21 @@
                                         </span>
                                     </div>
 
-                                    {/* Action Button */}
-                                    <button onClick={handlePrint} className="w-full mt-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold py-4 px-6 rounded-2xl shadow-xl shadow-indigo-200 transition-all transform hover:-translate-y-0.5 active:translate-y-0 active:shadow-md flex justify-center items-center gap-3 text-lg">
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
-                                        Print Invoice {billDelivery === 'Courier' ? '& Shipping Label' : ''}
-                                    </button>
+                                    {/* Action Buttons */}
+                                    <div className="flex gap-4 mt-2">
+                                        <button onClick={handlePrint} className="w-1/2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold py-4 px-4 rounded-2xl shadow-xl shadow-indigo-200 transition-all transform hover:-translate-y-0.5 active:translate-y-0 active:shadow-md flex justify-center items-center gap-2 text-lg">
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
+                                            Print
+                                        </button>
+                                        <button onClick={handleNewBill} className="w-1/2 bg-slate-800 hover:bg-slate-900 text-white font-bold py-4 px-4 rounded-2xl shadow-xl transition-all transform hover:-translate-y-0.5 active:translate-y-0 active:shadow-md flex justify-center items-center gap-2 text-lg">
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
+                                            New Bill
+                                        </button>
+                                    </div>
                                 </div>
 
                                 {/* PREVIEW PANEL */}
-                                <div id="print-section" className="w-full lg:w-[45%] flex flex-col gap-8 items-center bg-slate-200/50 p-6 md:p-8 print:p-0 print:bg-white rounded-3xl border border-slate-200 shadow-inner overflow-y-auto h-fit">
+                                <div className="w-full lg:w-[45%] flex flex-col gap-8 items-center bg-slate-200/50 p-6 md:p-8 print:p-0 print:bg-white rounded-3xl border border-slate-200 shadow-inner overflow-y-auto h-fit print-section print:overflow-visible print:h-auto print:block print:border-none print:shadow-none">
                                     <div className="w-full text-center print:hidden mb-2">
                                         <span className="inline-block bg-slate-300 text-slate-600 font-bold text-[10px] uppercase tracking-widest px-4 py-1.5 rounded-full">Print Previews</span>
                                     </div>
@@ -706,7 +807,7 @@
                         {/* -------------------- TAB: GENERATOR (Label Only) -------------------- */}
                         {activeTab === 'generator' && (
                             <>
-                                <div id="no-print" className="w-full lg:w-[40%] bg-white p-8 rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100 h-fit space-y-6">
+                                <div className="w-full lg:w-[40%] bg-white p-8 rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100 h-fit space-y-6 no-print">
                                     <h2 className="text-3xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600 mb-2 border-b border-slate-100 pb-4">Manual Label Creator</h2>
                                     <div className="space-y-5">
                                         <ModernInput label="Order ID / Tracking" type="text" value={orderId} onChange={(e) => setOrderId(e.target.value)} className="uppercase" />
@@ -723,7 +824,7 @@
                                         </div>
                                     </div>
                                 </div>
-                                <div id="print-section" className="w-full lg:w-[60%] flex justify-center bg-slate-200/50 p-6 md:p-8 rounded-3xl border border-slate-200 shadow-inner">
+                                <div className="w-full lg:w-[60%] flex justify-center bg-slate-200/50 p-6 md:p-8 rounded-3xl border border-slate-200 shadow-inner print-section print:overflow-visible print:h-auto print:block print:p-0 print:bg-white print:border-none print:shadow-none">
                                     <div className="a5-container hover:shadow-2xl transition-shadow">
                                         <LabelContent orderId={orderId} toName={toName} toAddress={toAddress} toPhone={toPhone} />
                                     </div>

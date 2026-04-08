@@ -125,6 +125,14 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
+        // ✨ BULLETPROOF ID GENERATOR (Works on Local Desktop Files)
+        const generateSafeId = () => {
+            if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+                return crypto.randomUUID();
+            }
+            return 'id-' + Math.random().toString(36).substr(2, 9) + '-' + Date.now();
+        };
+
         // --- DYNAMIC PWA MANIFEST ---
         const setupPWA = () => {
             const iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%234f46e5"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>`;
@@ -286,11 +294,14 @@
         );
 
         function App() {
-            const [activeTab, setActiveTab] = useState('billing'); // Default to billing
+            const [activeTab, setActiveTab] = useState('billing'); 
             const [sheetUrl, setSheetUrl] = useState(localStorage.getItem('googleSheetUrl') || '');
             const [serverUrl, setServerUrl] = useState(localStorage.getItem('serverUrl') || '/api/save-label');
-            const [logoUrl, setLogoUrl] = useState(localStorage.getItem('logoUrl') || ''); // ✨ Custom Logo URL
-            const [notification, setNotification] = useState(null); // Custom Notification State
+            const [logoUrl, setLogoUrl] = useState(localStorage.getItem('logoUrl') || ''); 
+            const [notification, setNotification] = useState(null); 
+            
+            // ✨ EDITING REF: Prevents auto-generating new IDs when loading old bills
+            const isEditingRef = useRef(false);
 
             const showNotification = (msg) => {
                 setNotification(msg);
@@ -336,7 +347,6 @@
                 'BAGGY TRACK SANDLE - M': 280, 'BAGGY TRACK SANDLE - L': 280, 'BAGGY TRACK SANDLE - XL': 280, 'BAGGY TRACK SANDLE - XXL': 280,
             };
             
-            // Map the simple key:value defaults to key:{price, hsn} structure
             const DEFAULT_INVENTORY = Object.fromEntries(
                 Object.entries(DEFAULT_INVENTORY_RAW).map(([k, v]) => [k, { price: v, hsn: '' }])
             );
@@ -345,7 +355,6 @@
                 const stored = JSON.parse(localStorage.getItem('inventory'));
                 if (!stored) return DEFAULT_INVENTORY;
                 
-                // ✨ Safety Migration: Convert old { 'ITEM': 280 } to { 'ITEM': { price: 280, hsn: '' } }
                 const migrated = {};
                 for (const key in stored) {
                     if (typeof stored[key] === 'number') {
@@ -358,7 +367,7 @@
             });
             const [newItemName, setNewItemName] = useState('');
             const [newItemPrice, setNewItemPrice] = useState('');
-            const [newItemHsn, setNewItemHsn] = useState(''); // ✨ NEW
+            const [newItemHsn, setNewItemHsn] = useState(''); 
 
             const handleAddInventory = () => {
                 if (!newItemName.trim() || !newItemPrice) return showNotification("Please enter item name and price.");
@@ -385,52 +394,7 @@
             // --- SAVED BILLS FOR REPORTS ---
             const [savedBills, setSavedBills] = useState(() => JSON.parse(localStorage.getItem('savedBills') || '[]'));
 
-            // ✨ NEW: Update Payment State
-            const [paymentModal, setPaymentModal] = useState(null);
-            const [editCash, setEditCash] = useState(0);
-            const [editGpay, setEditGpay] = useState(0);
-
-            const openPaymentModal = (bill) => {
-                setPaymentModal(bill);
-                setEditCash(bill.cash || 0);
-                setEditGpay(bill.gpay || 0);
-            };
-
-            const handleUpdatePayment = () => {
-                setSavedBills(prev => {
-                    const updated = prev.map(b => {
-                        if (b.id === paymentModal.id) {
-                            const newCash = Number(editCash) || 0;
-                            const newGpay = Number(editGpay) || 0;
-                            return {
-                                ...b,
-                                cash: newCash,
-                                gpay: newGpay,
-                                balance: b.total - newCash - newGpay
-                            };
-                        }
-                        return b;
-                    });
-                    localStorage.setItem('savedBills', JSON.stringify(updated));
-                    return updated;
-                });
-                showNotification("Payment updated successfully!");
-                setPaymentModal(null);
-            };
-
-            // Delete individual bill
-            const deleteBill = (id) => {
-                if(window.confirm("Are you sure you want to delete this bill?")) {
-                    setSavedBills(prev => {
-                        const updated = prev.filter(b => b.id !== id);
-                        localStorage.setItem('savedBills', JSON.stringify(updated));
-                        return updated;
-                    });
-                    showNotification("Bill deleted successfully!");
-                }
-            };
-
-            // Helper to generate Auto Incrementing IDs based on Month/Year
+            // Helper to generate Auto Incrementing IDs based on Month/Year (e.g. LSF-APR-001)
             const getNextInvoiceId = (dateStr) => {
                 const d = new Date(dateStr || new Date());
                 if (isNaN(d.getTime())) return '';
@@ -470,11 +434,86 @@
             const [billTracking, setBillTracking] = useState(bDraft.billTracking || '');
             const [billDiscount, setBillDiscount] = useState(bDraft.billDiscount || 0);
             const [billPromoCode, setBillPromoCode] = useState(bDraft.billPromoCode || 'NO CODE');
-            const [billItems, setBillItems] = useState(bDraft.billItems || [{ id: crypto.randomUUID(), particular: '', hsn: '', qty: 1, rate: 0 }]);
+            const [billItems, setBillItems] = useState(bDraft.billItems || [{ id: generateSafeId(), particular: '', hsn: '', qty: 1, rate: 0 }]);
             
             // --- SPLIT PAYMENT STATE ---
             const [paidGpay, setPaidGpay] = useState(bDraft.paidGpay || 0);
             const [paidCash, setPaidCash] = useState(bDraft.paidCash || 0);
+
+            // --- UPDATE PAYMENT STATE ---
+            const [paymentModal, setPaymentModal] = useState(null);
+            const [editCash, setEditCash] = useState(0);
+            const [editGpay, setEditGpay] = useState(0);
+
+            const openPaymentModal = (bill) => {
+                setPaymentModal(bill);
+                setEditCash(bill.cash || 0);
+                setEditGpay(bill.gpay || 0);
+            };
+
+            const handleUpdatePayment = () => {
+                setSavedBills(prev => {
+                    const updated = prev.map(b => {
+                        if (b.id === paymentModal.id) {
+                            const newCash = Number(editCash) || 0;
+                            const newGpay = Number(editGpay) || 0;
+                            return {
+                                ...b,
+                                cash: newCash,
+                                gpay: newGpay,
+                                balance: b.total - newCash - newGpay
+                            };
+                        }
+                        return b;
+                    });
+                    localStorage.setItem('savedBills', JSON.stringify(updated));
+                    return updated;
+                });
+                showNotification("Payment updated successfully!");
+                setPaymentModal(null);
+            };
+
+            const deleteBill = (id) => {
+                if(window.confirm("Are you sure you want to delete this bill?")) {
+                    setSavedBills(prev => {
+                        const updated = prev.filter(b => b.id !== id);
+                        localStorage.setItem('savedBills', JSON.stringify(updated));
+                        return updated;
+                    });
+                    showNotification("Bill deleted successfully!");
+                }
+            };
+
+            // ✨ NEW: LOAD BILL TO EDIT (Safely loads old and new bills)
+            const handleEditBill = (billToEdit) => {
+                isEditingRef.current = true; // Prevent date-watcher from changing the Invoice ID automatically
+                
+                setBillInvoice(billToEdit.id);
+                setBillDate(billToEdit.date);
+                setBillType(billToEdit.type || 'Non-GST');
+                setBillCustomerName(billToEdit.customer === 'Walk-in' ? '' : billToEdit.customer);
+                
+                setBillCustomerPhone(billToEdit.phone || '');
+                setBillCustomerAddress(billToEdit.address || '');
+                setBillDelivery(billToEdit.delivery || 'Store Walk-in');
+                setBillCourier(billToEdit.courier || 'Professional Courier');
+                setBillTracking(billToEdit.tracking || '');
+                setBillDiscount(billToEdit.discount || 0);
+                setBillPromoCode(billToEdit.promoCode || 'NO CODE');
+                
+                if (billToEdit.items && billToEdit.items.length > 0) {
+                    setBillItems(billToEdit.items);
+                } else {
+                    setBillItems([{ id: generateSafeId(), particular: 'Restored Legacy Bill (Items missing)', hsn: '', qty: 1, rate: billToEdit.total }]);
+                }
+                
+                setPaidCash(billToEdit.cash || 0);
+                setPaidGpay(billToEdit.gpay || 0);
+                
+                setActiveTab('billing');
+                try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch(e) {}
+                showNotification(`Loaded Bill ${billToEdit.id} for Editing!`);
+            };
 
             // --- CONTINUOUS DRAFT AUTO-SAVE EFFECTS ---
             useEffect(() => {
@@ -491,7 +530,7 @@
                 localStorage.setItem('billingDraft', JSON.stringify(draft));
             }, [billDate, billInvoice, billType, billCustomerName, billCustomerPhone, billCustomerAddress, billDelivery, billCourier, billTracking, billDiscount, billPromoCode, billItems, paidGpay, paidCash]);
 
-            // ✨ Phone Auto-fill Handler
+            // Phone Auto-fill Handler
             const handlePhoneChange = (e) => {
                 const val = e.target.value;
                 setBillCustomerPhone(val);
@@ -504,16 +543,11 @@
             // --- REPORT STATE ---
             const currentMonthStr = todayStr.substring(0, 7); // YYYY-MM
             const currentYearStr = todayStr.substring(0, 4); // YYYY
-            const [reportType, setReportType] = useState('daily'); // 'daily', 'monthly', 'yearly'
+            const [reportType, setReportType] = useState('daily'); 
             const [reportDate, setReportDate] = useState(todayStr);
             const [reportMonth, setReportMonth] = useState(currentMonthStr);
             const [reportYear, setReportYear] = useState(currentYearStr);
             const [reportFilter, setReportFilter] = useState('All'); 
-
-            // Effect: Auto-update Invoice Number when Date changes
-            useEffect(() => {
-                setBillInvoice(getNextInvoiceId(billDate));
-            }, [billDate]);
 
             // --- AI & GEMINI STATE ---
             const [isFormattingAddress, setIsFormattingAddress] = useState(false);
@@ -579,12 +613,11 @@
             const [savedScans, setSavedScans] = useState(() => JSON.parse(localStorage.getItem('savedScans') || '[]'));
             const scannerRef = useRef(null);
 
-            // Auto-save successful scans to the local database
             const saveScanToDatabase = (data) => {
                 setSavedScans(prev => {
                     const newScan = {
                         ...data,
-                        scanId: crypto.randomUUID(),
+                        scanId: generateSafeId(),
                         scanDate: new Date().toLocaleString()
                     };
                     const updated = [newScan, ...prev];
@@ -593,7 +626,6 @@
                 });
             };
 
-            // Delete individual scan
             const deleteScan = (scanId) => {
                 if(window.confirm("Are you sure you want to delete this scan?")) {
                     setSavedScans(prev => {
@@ -613,7 +645,6 @@
                 }
             };
 
-            // Effect: Scanner Setup with robust error handling for missing DOM elements
             useEffect(() => {
                 let isMounted = true;
                 let timeoutId;
@@ -680,18 +711,27 @@
             const saveCurrentBill = () => {
                 if (grandTotal <= 0 && totalQty === 0) return;
                 
+                // ✨ Enhanced payload with ALL invoice details for perfect editing round-trips
                 const newBill = {
                     id: billInvoice,
                     date: billDate,
                     type: billType, 
                     customer: billCustomerName || 'Walk-in',
+                    phone: billCustomerPhone,
+                    address: billCustomerAddress,
+                    delivery: billDelivery,
+                    courier: billCourier,
+                    tracking: billTracking,
+                    discount: billDiscount,
+                    promoCode: billPromoCode,
+                    items: billItems,
                     total: grandTotal,
                     cash: Number(paidCash) || 0,
                     gpay: Number(paidGpay) || 0,
                     balance: balanceAmount
                 };
 
-                // Save to reports
+                // Save to reports (overwrites if ID already exists, creates new if it doesn't)
                 setSavedBills(prevBills => {
                     const existingIndex = prevBills.findIndex(b => b.id === billInvoice);
                     const updated = [...prevBills];
@@ -704,7 +744,7 @@
                     return updated;
                 });
 
-                // ✨ Update Customer Database silently
+                // Update Customer Database silently
                 if (billCustomerPhone && billCustomerPhone.trim() !== '') {
                     setCustomers(prev => {
                         const updated = { 
@@ -728,7 +768,7 @@
                     }
                 }, 1000); 
                 return () => clearTimeout(timer);
-            }, [billInvoice, billDate, billType, billCustomerName, billCustomerPhone, billCustomerAddress, grandTotal, paidCash, paidGpay, balanceAmount, totalQty]);
+            }, [billInvoice, billDate, billType, billCustomerName, billCustomerPhone, billCustomerAddress, billDelivery, billCourier, billTracking, billDiscount, billPromoCode, billItems, grandTotal, paidCash, paidGpay, balanceAmount, totalQty]);
 
             // Handlers
             const handleNewBill = () => {
@@ -744,6 +784,7 @@
                     const currentSeq = counters[key] || 1;
                     
                     const expectedInvoice = `LSF-${month}-${String(currentSeq).padStart(3, '0')}`;
+                    // Only increment if we actually used the generated one (so editing old ones doesn't ruin the sequence)
                     if (billInvoice === expectedInvoice) {
                         counters[key] = currentSeq + 1;
                         localStorage.setItem('invoiceCounters', JSON.stringify(counters));
@@ -751,6 +792,7 @@
                 }
 
                 // Reset forms
+                isEditingRef.current = false; // We are making a new bill now!
                 setBillCustomerName('');
                 setBillType('Non-GST'); 
                 setBillCustomerPhone('');
@@ -760,7 +802,7 @@
                 setPaidGpay(0);
                 setPaidCash(0);
                 setBillPromoCode('NO CODE');
-                setBillItems([{ id: crypto.randomUUID(), particular: '', hsn: '', qty: 1, rate: 0 }]); 
+                setBillItems([{ id: generateSafeId(), particular: '', hsn: '', qty: 1, rate: 0 }]); 
                 
                 // Get fresh date and update IDs
                 const today = new Date().toISOString().split('T')[0];
@@ -798,7 +840,7 @@
                 } catch (error) { setSyncStatus('Failed to sync. Check console.'); }
             };
 
-            // ✨ NEW: Logo Upload Handler
+            // Logo Upload Handler
             const handleLogoUpload = (e) => {
                 const file = e.target.files[0];
                 if (file) {
@@ -819,10 +861,9 @@
                         let updated = { ...i, [field]: value }; 
                         if (field === 'particular') {
                             const upperVal = value.toUpperCase();
-                            // ✨ Check dynamic inventory instead of hardcoded list
                             if (inventory[upperVal]) {
-                                updated.rate = inventory[upperVal].price; // Auto-fill price
-                                if (inventory[upperVal].hsn) updated.hsn = inventory[upperVal].hsn; // Auto-fill HSN
+                                updated.rate = inventory[upperVal].price;
+                                if (inventory[upperVal].hsn) updated.hsn = inventory[upperVal].hsn;
                             }
                         }
                         return updated;
@@ -831,7 +872,7 @@
                 }));
             };
             
-            const addBillItem = () => setBillItems([...billItems, { id: crypto.randomUUID(), particular: '', hsn: '', qty: 1, rate: 0 }]);
+            const addBillItem = () => setBillItems([...billItems, { id: generateSafeId(), particular: '', hsn: '', qty: 1, rate: 0 }]);
             const removeBillItem = (id) => setBillItems(billItems.filter(i => i.id !== id));
             
             // --- DAILY/MONTHLY/YEARLY REPORTS LOGIC ---
@@ -1483,7 +1524,11 @@
                                                             <td className="p-4 text-sm font-bold text-right text-amber-600 print:text-black">₹ {bill.balance}</td>
                                                             <td className="p-4 text-center no-print">
                                                                 <div className="flex justify-center gap-1">
-                                                                    <button onClick={() => openPaymentModal(bill)} className="text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 p-1.5 rounded transition-colors" title="Update Payment">
+                                                                    {/* ✨ NEW: Load Full Bill for Editing */}
+                                                                    <button onClick={() => handleEditBill(bill)} className="text-blue-500 hover:text-blue-700 hover:bg-blue-50 p-1.5 rounded transition-colors" title="Edit Full Bill">
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mx-auto" viewBox="0 0 20 20" fill="currentColor"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" /></svg>
+                                                                    </button>
+                                                                    <button onClick={() => openPaymentModal(bill)} className="text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 p-1.5 rounded transition-colors" title="Update Payment Only">
                                                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mx-auto" viewBox="0 0 20 20" fill="currentColor"><path d="M4 4a2 2 0 00-2 2v1h16V6a2 2 0 00-2-2H4z" /><path fillRule="evenodd" d="M18 9H2v5a2 2 0 002 2h12a2 2 0 002-2V9zM4 13a1 1 0 011-1h1a1 1 0 110 2H5a1 1 0 01-1-1zm5-1a1 1 0 100 2h1a1 1 0 100-2H9z" clipRule="evenodd" /></svg>
                                                                     </button>
                                                                     <button onClick={() => deleteBill(bill.id)} className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1.5 rounded transition-colors" title="Delete Bill">

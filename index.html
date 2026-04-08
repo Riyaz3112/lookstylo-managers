@@ -391,8 +391,42 @@
                 }
             };
 
-            // --- SAVED BILLS FOR REPORTS ---
-            const [savedBills, setSavedBills] = useState(() => JSON.parse(localStorage.getItem('savedBills') || '[]'));
+            // --- SAVED BILLS FOR REPORTS (AUTO-GENERATES 1-19) ---
+            const [savedBills, setSavedBills] = useState(() => {
+                const existing = JSON.parse(localStorage.getItem('savedBills') || 'null');
+                if (existing && existing.length > 0) return existing;
+
+                // Auto-create bills 1 through 19 if database is empty
+                const initialBills = [];
+                for (let i = 1; i <= 19; i++) {
+                    initialBills.push({
+                        id: `LSF-APR-${String(i).padStart(3, '0')}`,
+                        date: '2026-04-01', 
+                        type: 'Non-GST',
+                        customer: 'Pending Edit',
+                        phone: '',
+                        address: '',
+                        delivery: 'Store Walk-in',
+                        courier: 'Professional Courier',
+                        tracking: '',
+                        discount: 0,
+                        promoCode: 'NO CODE',
+                        items: [{ id: generateSafeId(), particular: 'PENDING BILL UPDATE', hsn: '', qty: 1, rate: 0 }],
+                        total: 0,
+                        cash: 0,
+                        gpay: 0,
+                        balance: 0
+                    });
+                }
+                localStorage.setItem('savedBills', JSON.stringify(initialBills));
+                
+                // Set the counter so the next new bill is #20
+                const counters = JSON.parse(localStorage.getItem('invoiceCounters') || '{}');
+                counters['APR-2026'] = 20; 
+                localStorage.setItem('invoiceCounters', JSON.stringify(counters));
+                
+                return initialBills;
+            });
 
             // Helper to generate Auto Incrementing IDs based on Month/Year (e.g. LSF-APR-001)
             const getNextInvoiceId = (dateStr) => {
@@ -783,12 +817,22 @@
                     const counters = JSON.parse(localStorage.getItem('invoiceCounters') || '{}');
                     const currentSeq = counters[key] || 1;
                     
-                    const expectedInvoice = `LSF-${month}-${String(currentSeq).padStart(3, '0')}`;
-                    // Only increment if we actually used the generated one (so editing old ones doesn't ruin the sequence)
-                    if (billInvoice === expectedInvoice) {
-                        counters[key] = currentSeq + 1;
-                        localStorage.setItem('invoiceCounters', JSON.stringify(counters));
+                    // ✨ SMART INVOICE TRACKING:
+                    // Automatically learn from manually entered sequence numbers
+                    const parts = billInvoice.split('-');
+                    const seqFromInvoice = parseInt(parts[parts.length - 1], 10);
+                    
+                    if (!isNaN(seqFromInvoice) && billInvoice.includes(`LSF-${month}`)) {
+                        // Keep the highest sequence number so entering old bills doesn't reset it
+                        counters[key] = Math.max(currentSeq, seqFromInvoice + 1);
+                    } else {
+                        // Fallback
+                        const expectedInvoice = `LSF-${month}-${String(currentSeq).padStart(3, '0')}`;
+                        if (billInvoice === expectedInvoice) {
+                            counters[key] = currentSeq + 1;
+                        }
                     }
+                    localStorage.setItem('invoiceCounters', JSON.stringify(counters));
                 }
 
                 // Reset forms

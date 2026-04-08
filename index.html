@@ -323,7 +323,7 @@
             const [customers, setCustomers] = useState(() => JSON.parse(localStorage.getItem('customers') || '{}'));
 
             // --- INVENTORY MANAGEMENT ---
-            const DEFAULT_INVENTORY = {
+            const DEFAULT_INVENTORY_RAW = {
                 'IPL JERSEY MI - M': 280, 'IPL JERSEY MI - L': 280, 'IPL JERSEY MI - XL': 280,
                 'IPL JERSEY RCB - M': 280, 'IPL JERSEY RCB - L': 280, 'IPL JERSEY RCB - XL': 280,
                 'IPL JERSEY CSK - M': 280, 'IPL JERSEY CSK - L': 280, 'IPL JERSEY CSK - XL': 280,
@@ -335,18 +335,40 @@
                 'BAGGY TRACK RED - M': 280, 'BAGGY TRACK RED - L': 280, 'BAGGY TRACK RED - XL': 280, 'BAGGY TRACK RED - XXL': 280,
                 'BAGGY TRACK SANDLE - M': 280, 'BAGGY TRACK SANDLE - L': 280, 'BAGGY TRACK SANDLE - XL': 280, 'BAGGY TRACK SANDLE - XXL': 280,
             };
-            const [inventory, setInventory] = useState(() => JSON.parse(localStorage.getItem('inventory') || JSON.stringify(DEFAULT_INVENTORY)));
+            
+            // Map the simple key:value defaults to key:{price, hsn} structure
+            const DEFAULT_INVENTORY = Object.fromEntries(
+                Object.entries(DEFAULT_INVENTORY_RAW).map(([k, v]) => [k, { price: v, hsn: '' }])
+            );
+
+            const [inventory, setInventory] = useState(() => {
+                const stored = JSON.parse(localStorage.getItem('inventory'));
+                if (!stored) return DEFAULT_INVENTORY;
+                
+                // ✨ Safety Migration: Convert old { 'ITEM': 280 } to { 'ITEM': { price: 280, hsn: '' } }
+                const migrated = {};
+                for (const key in stored) {
+                    if (typeof stored[key] === 'number') {
+                        migrated[key] = { price: stored[key], hsn: '' };
+                    } else {
+                        migrated[key] = stored[key];
+                    }
+                }
+                return migrated;
+            });
             const [newItemName, setNewItemName] = useState('');
             const [newItemPrice, setNewItemPrice] = useState('');
+            const [newItemHsn, setNewItemHsn] = useState(''); // ✨ NEW
 
             const handleAddInventory = () => {
                 if (!newItemName.trim() || !newItemPrice) return showNotification("Please enter item name and price.");
                 const upperName = newItemName.trim().toUpperCase();
-                const newInv = { ...inventory, [upperName]: Number(newItemPrice) };
+                const newInv = { ...inventory, [upperName]: { price: Number(newItemPrice), hsn: newItemHsn.trim() } };
                 setInventory(newInv);
                 localStorage.setItem('inventory', JSON.stringify(newInv));
                 setNewItemName('');
                 setNewItemPrice('');
+                setNewItemHsn('');
                 showNotification(`${upperName} added to inventory!`);
             };
 
@@ -448,7 +470,7 @@
             const [billTracking, setBillTracking] = useState(bDraft.billTracking || '');
             const [billDiscount, setBillDiscount] = useState(bDraft.billDiscount || 0);
             const [billPromoCode, setBillPromoCode] = useState(bDraft.billPromoCode || 'NO CODE');
-            const [billItems, setBillItems] = useState(bDraft.billItems || [{ id: crypto.randomUUID(), particular: '', qty: 1, rate: 0 }]);
+            const [billItems, setBillItems] = useState(bDraft.billItems || [{ id: crypto.randomUUID(), particular: '', hsn: '', qty: 1, rate: 0 }]);
             
             // --- SPLIT PAYMENT STATE ---
             const [paidGpay, setPaidGpay] = useState(bDraft.paidGpay || 0);
@@ -527,6 +549,28 @@
                         await new Promise(res => setTimeout(res, retries[i]));
                     }
                 }
+            };
+
+            const handleFormatAddress = async () => {
+                if (!billCustomerAddress || billCustomerAddress.trim().length < 5) return;
+                setIsFormattingAddress(true);
+                const prompt = `Format this Indian shipping address neatly. Capitalize names/cities correctly, ensure logical line breaks (e.g., Name \n Street/Locality \n City, State - Pincode). Remove any messy characters. Return ONLY the formatted address text, no conversational filler. Address: ${billCustomerAddress}`;
+                const formatted = await callGeminiAPI(prompt);
+                if (formatted) setBillCustomerAddress(formatted.trim());
+                setIsFormattingAddress(false);
+            };
+
+            const handleGenerateReview = async () => {
+                setIsGeneratingMsg(true);
+                const prompt = `Write a friendly, short WhatsApp message from 'Lookstylo Fashion' to customer '${billCustomerName || 'Customer'}'. 
+                Ask them if they received their recent order and if they are happy with the quality. 
+                Kindly request them to share a 5-star review on our Google page using this exact link: https://g.page/r/CYYvcLcuUkztECk/review
+                Also mention that if they share a picture on Instagram, they can tag us @lookstylo_fashion. 
+                Keep it concise, polite, and use a few emojis. Do not include placeholder brackets, act as if this is the final message to send.`;
+                
+                const msg = await callGeminiAPI(prompt);
+                if (msg) setGeneratedWhatsapp(msg.trim());
+                setIsGeneratingMsg(false);
             };
 
             // --- SCANNER STATE & DATABASE ---
@@ -716,7 +760,7 @@
                 setPaidGpay(0);
                 setPaidCash(0);
                 setBillPromoCode('NO CODE');
-                setBillItems([{ id: crypto.randomUUID(), particular: '', qty: 1, rate: 0 }]); 
+                setBillItems([{ id: crypto.randomUUID(), particular: '', hsn: '', qty: 1, rate: 0 }]); 
                 
                 // Get fresh date and update IDs
                 const today = new Date().toISOString().split('T')[0];
@@ -777,7 +821,8 @@
                             const upperVal = value.toUpperCase();
                             // ✨ Check dynamic inventory instead of hardcoded list
                             if (inventory[upperVal]) {
-                                updated.rate = inventory[upperVal];
+                                updated.rate = inventory[upperVal].price; // Auto-fill price
+                                if (inventory[upperVal].hsn) updated.hsn = inventory[upperVal].hsn; // Auto-fill HSN
                             }
                         }
                         return updated;
@@ -786,7 +831,7 @@
                 }));
             };
             
-            const addBillItem = () => setBillItems([...billItems, { id: crypto.randomUUID(), particular: '', qty: 1, rate: 0 }]);
+            const addBillItem = () => setBillItems([...billItems, { id: crypto.randomUUID(), particular: '', hsn: '', qty: 1, rate: 0 }]);
             const removeBillItem = (id) => setBillItems(billItems.filter(i => i.id !== id));
             
             // --- DAILY/MONTHLY/YEARLY REPORTS LOGIC ---
@@ -937,6 +982,10 @@
                                     <tr className="border-b-2 border-gray-900 bg-gray-50">
                                         <th className="py-2 px-1 font-bold w-10 text-center border-r border-gray-400">S.No</th>
                                         <th className="py-2 px-2 font-bold border-r border-gray-400">Particulars</th>
+                                        {/* ✨ Show HSN header only on GST Bills */}
+                                        {billType === 'GST' && (
+                                            <th className="py-2 px-1 font-bold text-center w-16 border-r border-gray-400">HSN</th>
+                                        )}
                                         <th className="py-2 px-1 font-bold text-center w-10 border-r border-gray-400">Qty</th>
                                         <th className="py-2 px-1 font-bold text-right w-16 border-r border-gray-400">Rate</th>
                                         <th className="py-2 px-2 font-bold text-right w-20">Amount</th>
@@ -947,6 +996,10 @@
                                         <tr key={item.id} className="border-b border-gray-200">
                                             <td className="py-2 px-1 text-center border-r border-gray-400">{index + 1}</td>
                                             <td className="py-2 px-2 border-r border-gray-400 uppercase">{item.particular}</td>
+                                            {/* ✨ Show HSN column only on GST Bills */}
+                                            {billType === 'GST' && (
+                                                <td className="py-2 px-1 text-center border-r border-gray-400">{item.hsn || '-'}</td>
+                                            )}
                                             <td className="py-2 px-1 text-center border-r border-gray-400">{item.qty}</td>
                                             <td className="py-2 px-1 text-right border-r border-gray-400">{item.rate ? parseFloat(item.rate).toFixed(2) : ''}</td>
                                             <td className="py-2 px-2 text-right">{(item.qty * item.rate) ? (item.qty * item.rate).toFixed(2) : ''}</td>
@@ -1154,8 +1207,14 @@
                                                 <div key={item.id} className="flex gap-2 items-center group">
                                                     <div className="w-6 text-center text-xs font-bold text-slate-400">{index + 1}.</div>
                                                     <input list="preset-items" type="text" placeholder="Item Name / Product" value={item.particular} onChange={e=>updateBillItem(item.id, 'particular', e.target.value)} className="flex-grow p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm uppercase outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all shadow-sm" />
-                                                    <input type="number" min="1" value={item.qty} placeholder="Qty" onChange={e=>updateBillItem(item.id, 'qty', e.target.value)} className="w-20 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all shadow-sm text-center font-semibold text-slate-700" />
-                                                    <input type="number" min="0" value={item.rate} placeholder="Rate ₹" onChange={e=>updateBillItem(item.id, 'rate', e.target.value)} className="w-28 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all shadow-sm text-right font-semibold text-slate-700" />
+                                                    
+                                                    {/* ✨ HSN Input displays conditionally */}
+                                                    {billType === 'GST' && (
+                                                        <input type="text" placeholder="HSN" value={item.hsn || ''} onChange={e=>updateBillItem(item.id, 'hsn', e.target.value)} className="w-20 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all shadow-sm text-center font-semibold text-slate-700" />
+                                                    )}
+
+                                                    <input type="number" min="1" value={item.qty} placeholder="Qty" onChange={e=>updateBillItem(item.id, 'qty', e.target.value)} className="w-16 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all shadow-sm text-center font-semibold text-slate-700" />
+                                                    <input type="number" min="0" value={item.rate} placeholder="Rate ₹" onChange={e=>updateBillItem(item.id, 'rate', e.target.value)} className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all shadow-sm text-right font-semibold text-slate-700" />
                                                     <button onClick={()=>removeBillItem(item.id)} className={`text-slate-400 hover:text-red-500 hover:bg-red-50 p-2.5 rounded-xl transition-all ${billItems.length === 1 ? 'invisible' : ''}`} title="Remove Row">
                                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
                                                     </button>
@@ -1254,7 +1313,10 @@
                                     <div className="flex-1 w-full">
                                         <ModernInput label="Product Name" type="text" placeholder="e.g., BLACK T-SHIRT - M" value={newItemName} onChange={e=>setNewItemName(e.target.value)} className="uppercase" />
                                     </div>
-                                    <div className="w-full md:w-48">
+                                    <div className="w-full md:w-32">
+                                        <ModernInput label="HSN Code" type="text" placeholder="e.g., 6109" value={newItemHsn} onChange={e=>setNewItemHsn(e.target.value)} />
+                                    </div>
+                                    <div className="w-full md:w-32">
                                         <ModernInput label="Default Price (₹)" type="number" min="0" placeholder="e.g., 350" value={newItemPrice} onChange={e=>setNewItemPrice(e.target.value)} />
                                     </div>
                                     <button onClick={handleAddInventory} className="w-full md:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 px-6 rounded-xl shadow-lg shadow-indigo-200 transition-transform transform hover:-translate-y-0.5">
@@ -1267,15 +1329,17 @@
                                         <thead className="sticky top-0 bg-white shadow-sm border-b border-slate-200 text-xs uppercase tracking-wider text-slate-500">
                                             <tr>
                                                 <th className="p-4 font-bold">Product Name</th>
+                                                <th className="p-4 font-bold text-center">HSN Code</th>
                                                 <th className="p-4 font-bold text-right">Default Price (₹)</th>
                                                 <th className="p-4 font-bold text-center w-24">Action</th>
                                             </tr>
                                         </thead>
                                         <tbody className="bg-white divide-y divide-slate-100">
-                                            {Object.entries(inventory).sort(([a], [b]) => a.localeCompare(b)).map(([name, price]) => (
+                                            {Object.entries(inventory).sort(([a], [b]) => a.localeCompare(b)).map(([name, data]) => (
                                                 <tr key={name} className="hover:bg-slate-50 transition-colors">
                                                     <td className="p-4 font-medium text-slate-700">{name}</td>
-                                                    <td className="p-4 font-bold text-slate-800 text-right">₹ {price}</td>
+                                                    <td className="p-4 font-medium text-slate-600 text-center">{data.hsn || '-'}</td>
+                                                    <td className="p-4 font-bold text-slate-800 text-right">₹ {data.price}</td>
                                                     <td className="p-4 text-center">
                                                         <button onClick={() => handleDeleteInventory(name)} className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1.5 rounded transition-colors" title="Delete Item">
                                                             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mx-auto" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" /></svg>

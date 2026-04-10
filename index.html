@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#0f172a">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>Lookstylo Fashion</title>
+    <title>Lookstylo Fashion Pro</title>
     <link rel="manifest" id="dynamic-manifest" />
     <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
@@ -34,6 +34,25 @@
             color: black;
             overflow: hidden;
             border-radius: 4px;
+        }
+
+        /* ✨ PAID Seal Stamp Effect */
+        .paid-seal {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-15deg);
+            border: 6px solid #10b981;
+            color: #10b981;
+            font-size: 60px;
+            font-weight: 900;
+            padding: 10px 30px;
+            border-radius: 15px;
+            opacity: 0.15;
+            pointer-events: none;
+            text-transform: uppercase;
+            letter-spacing: 5px;
+            z-index: 50;
         }
 
         /* Strict Print Settings */
@@ -97,6 +116,7 @@
             }
 
             .print\:flex { display: flex !important; }
+            .paid-seal { opacity: 0.2 !important; border-width: 4px !important; }
         }
         
         .text-brand-red { color: #d32f2f; }
@@ -224,7 +244,8 @@
         const ModernInput = ({ label, ...props }) => (
             <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 ml-1">{label}</label>
-                <input {...props} className={`w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-sm font-medium text-slate-800 shadow-sm ${props.className || ''}`} />
+                {/* ✨ FIX: Added onWheel blur to prevent accidental mouse-scroll changes on numbers */}
+                <input {...props} onWheel={(e) => e.target.type === 'number' && e.target.blur()} className={`w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-sm font-medium text-slate-800 shadow-sm ${props.className || ''}`} />
             </div>
         );
 
@@ -348,7 +369,7 @@
             };
             
             const DEFAULT_INVENTORY = Object.fromEntries(
-                Object.entries(DEFAULT_INVENTORY_RAW).map(([k, v]) => [k, { price: v, hsn: '' }])
+                Object.entries(DEFAULT_INVENTORY_RAW).map(([k, v]) => [k, { price: v, hsn: '', gst: 0 }])
             );
 
             const [inventory, setInventory] = useState(() => {
@@ -358,7 +379,7 @@
                 const migrated = {};
                 for (const key in stored) {
                     if (typeof stored[key] === 'number') {
-                        migrated[key] = { price: stored[key], hsn: '' };
+                        migrated[key] = { price: stored[key], hsn: '', gst: 0 };
                     } else {
                         migrated[key] = stored[key];
                     }
@@ -372,7 +393,7 @@
             const handleAddInventory = () => {
                 if (!newItemName.trim() || !newItemPrice) return showNotification("Please enter item name and price.");
                 const upperName = newItemName.trim().toUpperCase();
-                const newInv = { ...inventory, [upperName]: { price: Number(newItemPrice), hsn: newItemHsn.trim() } };
+                const newInv = { ...inventory, [upperName]: { price: Number(newItemPrice), hsn: newItemHsn.trim(), gst: 0 } };
                 setInventory(newInv);
                 localStorage.setItem('inventory', JSON.stringify(newInv));
                 setNewItemName('');
@@ -411,7 +432,7 @@
                         tracking: '',
                         discount: 0,
                         promoCode: 'NO CODE',
-                        items: [{ id: generateSafeId(), particular: 'PENDING BILL UPDATE', hsn: '', qty: 1, rate: 0 }],
+                        items: [{ id: generateSafeId(), particular: 'PENDING BILL UPDATE', hsn: '', gst: 0, qty: 1, rate: 0 }],
                         total: 0,
                         cash: 0,
                         gpay: 0,
@@ -468,21 +489,24 @@
             const [billTracking, setBillTracking] = useState(bDraft.billTracking || '');
             const [billDiscount, setBillDiscount] = useState(bDraft.billDiscount || 0);
             const [billPromoCode, setBillPromoCode] = useState(bDraft.billPromoCode || 'NO CODE');
-            const [billItems, setBillItems] = useState(bDraft.billItems || [{ id: generateSafeId(), particular: '', hsn: '', qty: 1, rate: 0 }]);
+            const [billItems, setBillItems] = useState(bDraft.billItems || [{ id: generateSafeId(), particular: '', hsn: '', gst: 0, qty: 1, rate: 0 }]);
             
             // --- SPLIT PAYMENT STATE ---
             const [paidGpay, setPaidGpay] = useState(bDraft.paidGpay || 0);
             const [paidCash, setPaidCash] = useState(bDraft.paidCash || 0);
+            const [advancePayment, setAdvancePayment] = useState(bDraft.advancePayment || 0);
 
             // --- UPDATE PAYMENT STATE ---
             const [paymentModal, setPaymentModal] = useState(null);
             const [editCash, setEditCash] = useState(0);
             const [editGpay, setEditGpay] = useState(0);
+            const [editAdvance, setEditAdvance] = useState(0);
 
             const openPaymentModal = (bill) => {
                 setPaymentModal(bill);
                 setEditCash(bill.cash || 0);
                 setEditGpay(bill.gpay || 0);
+                setEditAdvance(bill.advance || 0);
             };
 
             const handleUpdatePayment = () => {
@@ -491,11 +515,13 @@
                         if (b.id === paymentModal.id) {
                             const newCash = Number(editCash) || 0;
                             const newGpay = Number(editGpay) || 0;
+                            const newAdvance = Number(editAdvance) || 0;
                             return {
                                 ...b,
                                 cash: newCash,
                                 gpay: newGpay,
-                                balance: b.total - newCash - newGpay
+                                advance: newAdvance,
+                                balance: b.total - newCash - newGpay - newAdvance
                             };
                         }
                         return b;
@@ -538,11 +564,12 @@
                 if (billToEdit.items && billToEdit.items.length > 0) {
                     setBillItems(billToEdit.items);
                 } else {
-                    setBillItems([{ id: generateSafeId(), particular: 'Restored Legacy Bill (Items missing)', hsn: '', qty: 1, rate: billToEdit.total }]);
+                    setBillItems([{ id: generateSafeId(), particular: 'Restored Legacy Bill (Items missing)', hsn: '', gst: 0, qty: 1, rate: billToEdit.total }]);
                 }
                 
                 setPaidCash(billToEdit.cash || 0);
                 setPaidGpay(billToEdit.gpay || 0);
+                setAdvancePayment(billToEdit.advance || 0);
                 
                 setActiveTab('billing');
                 try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch(e) {}
@@ -559,10 +586,10 @@
                 const draft = {
                     billDate, billInvoice, billType, billCustomerName, billCustomerPhone,
                     billCustomerAddress, billDelivery, billCourier, billTracking,
-                    billDiscount, billPromoCode, billItems, paidGpay, paidCash
+                    billDiscount, billPromoCode, billItems, paidGpay, paidCash, advancePayment
                 };
                 localStorage.setItem('billingDraft', JSON.stringify(draft));
-            }, [billDate, billInvoice, billType, billCustomerName, billCustomerPhone, billCustomerAddress, billDelivery, billCourier, billTracking, billDiscount, billPromoCode, billItems, paidGpay, paidCash]);
+            }, [billDate, billInvoice, billType, billCustomerName, billCustomerPhone, billCustomerAddress, billDelivery, billCourier, billTracking, billDiscount, billPromoCode, billItems, paidGpay, paidCash, advancePayment]);
 
             // Phone Auto-fill Handler
             const handlePhoneChange = (e) => {
@@ -736,10 +763,43 @@
             const subTotal = billItems.reduce((acc, item) => acc + ((item.qty || 0) * (item.rate || 0)), 0);
             const discountAmount = subTotal * ((Number(billDiscount) || 0) / 100);
             const totalAfterDiscount = subTotal - discountAmount;
+            
+            // Calculate included GST
+            const totalIncludedGstAmount = billItems.reduce((acc, item) => {
+                const itemTotal = ((item.qty || 0) * (item.rate || 0));
+                const itemTotalAfterItemDiscount = itemTotal * (1 - ((Number(billDiscount) || 0) / 100));
+                const gstRate = Number(item.gst) || 0;
+                // Base = Total / (1 + GST/100) -> GST = Total - Base
+                const gstAmount = itemTotalAfterItemDiscount - (itemTotalAfterItemDiscount / (1 + (gstRate / 100)));
+                return acc + gstAmount;
+            }, 0);
+
             const grandTotal = Math.round(totalAfterDiscount);
             const roundOffAmount = grandTotal - totalAfterDiscount;
             const totalQty = billItems.reduce((acc, item) => acc + Number(item.qty || 0), 0);
-            const balanceAmount = grandTotal - (Number(paidGpay) || 0) - (Number(paidCash) || 0);
+            const balanceAmount = grandTotal - (Number(paidGpay) || 0) - (Number(paidCash) || 0) - (Number(advancePayment) || 0);
+
+            // ✨ NEW: WhatsApp Share Handlers
+            const shareBillWhatsApp = () => {
+                const phone = billCustomerPhone.replace(/\D/g, '');
+                if (!phone) return showNotification("Please enter customer phone number.");
+                
+                const totalPaidAndAdvance = Number(paidCash) + Number(paidGpay) + Number(advancePayment);
+                
+                const msg = `Thank you for shopping with us 😀\n\n*Your e-Bill Summary:*\nInvoice: ${billInvoice}\nDate: ${billDate.split('-').reverse().join('-')}\nTotal Amount: ₹ ${grandTotal}\nPaid Amount: ₹ ${totalPaidAndAdvance}\nPending Balance: ₹ ${balanceAmount}\n\nBased on your recent experience, how would you rate your experience at Lookstylo Fashion?\n⭐ Please rate us here: https://g.page/r/CYYvcLcuUkztECk/review`;
+                
+                const targetPhone = phone.length === 10 ? `91${phone}` : phone;
+                window.open(`https://wa.me/${targetPhone}?text=${encodeURIComponent(msg)}`, '_blank');
+            };
+
+            const sendReminderWhatsApp = (bill) => {
+                const phone = (bill.phone || '').replace(/\D/g, '');
+                if (!phone) return showNotification("No phone number recorded for this bill.");
+                
+                const msg = `*LOOKSTYLO FASHION - Payment Reminder*\n\nDear ${bill.customer || 'Customer'},\nThis is a friendly reminder for your pending balance of *₹ ${bill.balance}* against Invoice ${bill.id}.\n\nPlease clear the dues at your earliest convenience.\nThank you!`;
+                const targetPhone = phone.length === 10 ? `91${phone}` : phone;
+                window.open(`https://wa.me/${targetPhone}?text=${encodeURIComponent(msg)}`, '_blank');
+            };
 
             // Save the current bill to LocalStorage for reporting
             const saveCurrentBill = () => {
@@ -762,6 +822,7 @@
                     total: grandTotal,
                     cash: Number(paidCash) || 0,
                     gpay: Number(paidGpay) || 0,
+                    advance: Number(advancePayment) || 0,
                     balance: balanceAmount
                 };
 
@@ -797,12 +858,12 @@
             // --- AUTO SAVE EFFECT ---
             useEffect(() => {
                 const timer = setTimeout(() => {
-                    if (totalQty > 0 || paidCash > 0 || paidGpay > 0) {
+                    if (totalQty > 0 || paidCash > 0 || paidGpay > 0 || advancePayment > 0) {
                         saveCurrentBill();
                     }
                 }, 1000); 
                 return () => clearTimeout(timer);
-            }, [billInvoice, billDate, billType, billCustomerName, billCustomerPhone, billCustomerAddress, billDelivery, billCourier, billTracking, billDiscount, billPromoCode, billItems, grandTotal, paidCash, paidGpay, balanceAmount, totalQty]);
+            }, [billInvoice, billDate, billType, billCustomerName, billCustomerPhone, billCustomerAddress, billDelivery, billCourier, billTracking, billDiscount, billPromoCode, billItems, grandTotal, paidCash, paidGpay, advancePayment, balanceAmount, totalQty]);
 
             // Handlers
             const handleNewBill = () => {
@@ -845,8 +906,9 @@
                 setBillDiscount(0);
                 setPaidGpay(0);
                 setPaidCash(0);
+                setAdvancePayment(0);
                 setBillPromoCode('NO CODE');
-                setBillItems([{ id: generateSafeId(), particular: '', hsn: '', qty: 1, rate: 0 }]); 
+                setBillItems([{ id: generateSafeId(), particular: '', hsn: '', gst: 0, qty: 1, rate: 0 }]); 
                 
                 // Get fresh date and update IDs
                 const today = new Date().toISOString().split('T')[0];
@@ -908,6 +970,7 @@
                             if (inventory[upperVal]) {
                                 updated.rate = inventory[upperVal].price;
                                 if (inventory[upperVal].hsn) updated.hsn = inventory[upperVal].hsn;
+                                if (inventory[upperVal].gst) updated.gst = inventory[upperVal].gst;
                             }
                         }
                         return updated;
@@ -916,7 +979,7 @@
                 }));
             };
             
-            const addBillItem = () => setBillItems([...billItems, { id: generateSafeId(), particular: '', hsn: '', qty: 1, rate: 0 }]);
+            const addBillItem = () => setBillItems([...billItems, { id: generateSafeId(), particular: '', hsn: '', gst: 0, qty: 1, rate: 0 }]);
             const removeBillItem = (id) => setBillItems(billItems.filter(i => i.id !== id));
             
             // --- DAILY/MONTHLY/YEARLY REPORTS LOGIC ---
@@ -938,6 +1001,7 @@
             const totalReportSales = reportBills.reduce((acc, b) => acc + (b.total || 0), 0);
             const totalReportCash = reportBills.reduce((acc, b) => acc + (b.cash || 0), 0);
             const totalReportGpay = reportBills.reduce((acc, b) => acc + (b.gpay || 0), 0);
+            const totalReportAdvance = reportBills.reduce((acc, b) => acc + (b.advance || 0), 0);
             const totalReportBalance = reportBills.reduce((acc, b) => acc + (b.balance || 0), 0);
             const totalGSTSales = reportBills.filter(b => b.type === 'GST').reduce((acc, b) => acc + (b.total || 0), 0);
             const totalNonGSTSales = reportBills.filter(b => b.type !== 'GST').reduce((acc, b) => acc + (b.total || 0), 0);
@@ -960,7 +1024,7 @@
                 }
 
                 // Create CSV headers
-                const headers = ['Date', 'Invoice ID', 'Type', 'Customer Name', 'Total Amount (Rs)', 'Cash Paid (Rs)', 'G-Pay Paid (Rs)', 'Pending Balance (Rs)'];
+                const headers = ['Date', 'Invoice ID', 'Type', 'Customer Name', 'Total Amount (Rs)', 'Advance Paid (Rs)', 'Cash Paid (Rs)', 'G-Pay Paid (Rs)', 'Pending Balance (Rs)'];
                 
                 // Map the data rows (matching the order shown on screen: newest first)
                 const rows = reportBills.slice().reverse().map(bill => [
@@ -969,6 +1033,7 @@
                     bill.type || 'Non-GST',
                     `"${(bill.customer || '').replace(/"/g, '""')}"`, // Wrap in quotes to safely handle commas in names
                     bill.total || 0,
+                    bill.advance || 0,
                     bill.cash || 0,
                     bill.gpay || 0,
                     bill.balance || 0
@@ -976,7 +1041,7 @@
 
                 // Add a Summary Row at the bottom
                 rows.push([]); // Empty row for spacing
-                rows.push(['', '', 'SUMMARY:', 'TOTALS:', totalReportSales, totalReportCash, totalReportGpay, totalReportBalance]);
+                rows.push(['', '', 'SUMMARY:', 'TOTALS:', totalReportSales, totalReportAdvance, totalReportCash, totalReportGpay, totalReportBalance]);
 
                 // Join everything into a CSV string
                 const csvContent = [
@@ -1067,9 +1132,12 @@
                                     <tr className="border-b-2 border-gray-900 bg-gray-50">
                                         <th className="py-2 px-1 font-bold w-10 text-center border-r border-gray-400">S.No</th>
                                         <th className="py-2 px-2 font-bold border-r border-gray-400">Particulars</th>
-                                        {/* ✨ Show HSN header only on GST Bills */}
+                                        {/* ✨ Show HSN and GST headers only on GST Bills */}
                                         {billType === 'GST' && (
-                                            <th className="py-2 px-1 font-bold text-center w-16 border-r border-gray-400">HSN</th>
+                                            <>
+                                                <th className="py-2 px-1 font-bold text-center w-16 border-r border-gray-400">HSN</th>
+                                                <th className="py-2 px-1 font-bold text-center w-12 border-r border-gray-400">GST</th>
+                                            </>
                                         )}
                                         <th className="py-2 px-1 font-bold text-center w-10 border-r border-gray-400">Qty</th>
                                         <th className="py-2 px-1 font-bold text-right w-16 border-r border-gray-400">Rate</th>
@@ -1077,19 +1145,24 @@
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {billItems.map((item, index) => (
+                                    {billItems.map((item, index) => {
+                                        const itemTotal = (item.qty || 0) * (item.rate || 0);
+                                        return (
                                         <tr key={item.id} className="border-b border-gray-200">
                                             <td className="py-2 px-1 text-center border-r border-gray-400">{index + 1}</td>
                                             <td className="py-2 px-2 border-r border-gray-400 uppercase">{item.particular}</td>
-                                            {/* ✨ Show HSN column only on GST Bills */}
+                                            {/* ✨ Show HSN and GST columns only on GST Bills */}
                                             {billType === 'GST' && (
-                                                <td className="py-2 px-1 text-center border-r border-gray-400">{item.hsn || '-'}</td>
+                                                <>
+                                                    <td className="py-2 px-1 text-center border-r border-gray-400">{item.hsn || '-'}</td>
+                                                    <td className="py-2 px-1 text-center border-r border-gray-400">{!item.gst || item.gst == 0 ? 'Non-GST' : `${item.gst}%`}</td>
+                                                </>
                                             )}
                                             <td className="py-2 px-1 text-center border-r border-gray-400">{item.qty}</td>
                                             <td className="py-2 px-1 text-right border-r border-gray-400">{item.rate ? parseFloat(item.rate).toFixed(2) : ''}</td>
-                                            <td className="py-2 px-2 text-right">{(item.qty * item.rate) ? (item.qty * item.rate).toFixed(2) : ''}</td>
+                                            <td className="py-2 px-2 text-right">{itemTotal ? itemTotal.toFixed(2) : ''}</td>
                                         </tr>
-                                    ))}
+                                    )})}
                                 </tbody>
                             </table>
                             <div className="text-[9px] text-gray-500 italic py-1 px-1 border-b-2 border-gray-900 bg-gray-50 text-right mt-auto">
@@ -1116,9 +1189,11 @@
                             <div className="w-[45%]">
                                 <div className="flex justify-between py-1"><span className="font-semibold">Sub Total:</span><span>₹ {subTotal.toFixed(2)}</span></div>
                                 {billDiscount > 0 && <div className="flex justify-between py-1 text-gray-700"><span>Discount ({billDiscount}%):</span><span>- ₹ {discountAmount.toFixed(2)}</span></div>}
+                                {billType === 'GST' && totalIncludedGstAmount > 0 && <div className="flex justify-between py-1 text-gray-700"><span>Includes GST:</span><span>₹ {totalIncludedGstAmount.toFixed(2)}</span></div>}
                                 {roundOffAmount !== 0 && <div className="flex justify-between py-1 text-gray-700"><span>Round Off:</span><span>{roundOffAmount > 0 ? '+ ' : '- '}₹ {Math.abs(roundOffAmount).toFixed(2)}</span></div>}
                                 <div className="flex justify-between text-sm font-bold border-t border-b border-gray-900 py-2 mt-1 bg-gray-50 px-1 mb-1"><span>Grand Total:</span><span>₹ {grandTotal.toFixed(2)}</span></div>
                                 
+                                {advancePayment > 0 && <div className="flex justify-between text-[11px] font-semibold text-gray-800 px-1 py-0.5"><span>Advance Paid:</span><span>₹ {(Number(advancePayment) || 0).toFixed(2)}</span></div>}
                                 <div className="flex justify-between text-[11px] font-semibold text-gray-800 px-1 py-0.5"><span>Paid (GPay):</span><span>₹ {(Number(paidGpay) || 0).toFixed(2)}</span></div>
                                 <div className="flex justify-between text-[11px] font-semibold text-gray-800 px-1 py-0.5"><span>Paid (Cash):</span><span>₹ {(Number(paidCash) || 0).toFixed(2)}</span></div>
                                 
@@ -1134,6 +1209,11 @@
                         <div className="mt-2 pt-1.5 border-t border-gray-300 text-center text-[8px] font-extrabold text-gray-500 tracking-widest uppercase shrink-0">
                             Powered by Shariff Enterprises
                         </div>
+                        
+                        {/* ✨ PAID Seal */}
+                        {balanceAmount <= 0 && grandTotal > 0 && (
+                            <div className="paid-seal">PAID</div>
+                        )}
                     </div>
                 );
             };
@@ -1170,14 +1250,15 @@
                                     </div>
                                 </div>
                                 <div className="space-y-4">
+                                    <ModernInput label="Advance Paid (₹)" type="number" min="0" value={editAdvance} onChange={e=>setEditAdvance(e.target.value)} className="text-purple-700 font-bold bg-white" />
                                     <ModernInput label="Total Cash Paid (₹)" type="number" min="0" value={editCash} onChange={e=>setEditCash(e.target.value)} className="text-emerald-700 font-bold bg-white" />
                                     <ModernInput label="Total G-Pay Paid (₹)" type="number" min="0" value={editGpay} onChange={e=>setEditGpay(e.target.value)} className="text-blue-700 font-bold bg-white" />
                                 </div>
                                 
-                                <div className={`mt-5 p-4 rounded-2xl flex justify-between items-center border ${(paymentModal.total - (Number(editCash)||0) - (Number(editGpay)||0)) > 0 ? 'bg-amber-50 border-amber-100' : 'bg-emerald-50 border-emerald-100'}`}>
+                                <div className={`mt-5 p-4 rounded-2xl flex justify-between items-center border ${(paymentModal.total - (Number(editCash)||0) - (Number(editGpay)||0) - (Number(editAdvance)||0)) > 0 ? 'bg-amber-50 border-amber-100' : 'bg-emerald-50 border-emerald-100'}`}>
                                     <span className="text-sm font-bold text-slate-600">New Balance:</span>
-                                    <span className={`text-xl font-black ${(paymentModal.total - (Number(editCash)||0) - (Number(editGpay)||0)) > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
-                                        ₹ {(paymentModal.total - (Number(editCash)||0) - (Number(editGpay)||0)).toFixed(2)}
+                                    <span className={`text-xl font-black ${(paymentModal.total - (Number(editCash)||0) - (Number(editGpay)||0) - (Number(editAdvance)||0)) > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                                        ₹ {(paymentModal.total - (Number(editCash)||0) - (Number(editGpay)||0) - (Number(editAdvance)||0)).toFixed(2)}
                                     </span>
                                 </div>
 
@@ -1289,17 +1370,27 @@
                                                 {Object.keys(inventory).map(item => <option key={item} value={item} />)}
                                             </datalist>
                                             {billItems.map((item, index) => (
-                                                <div key={item.id} className="flex gap-2 items-center group">
+                                                <div key={item.id} className="flex gap-2 items-center group flex-wrap md:flex-nowrap">
                                                     <div className="w-6 text-center text-xs font-bold text-slate-400">{index + 1}.</div>
-                                                    <input list="preset-items" type="text" placeholder="Item Name / Product" value={item.particular} onChange={e=>updateBillItem(item.id, 'particular', e.target.value)} className="flex-grow p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm uppercase outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all shadow-sm" />
+                                                    <input list="preset-items" type="text" placeholder="Item Name / Product" value={item.particular} onChange={e=>updateBillItem(item.id, 'particular', e.target.value)} className="flex-grow p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm uppercase outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all shadow-sm w-full md:w-auto" />
                                                     
-                                                    {/* ✨ HSN Input displays conditionally */}
+                                                    {/* ✨ HSN & GST Input displays conditionally */}
                                                     {billType === 'GST' && (
-                                                        <input type="text" placeholder="HSN" value={item.hsn || ''} onChange={e=>updateBillItem(item.id, 'hsn', e.target.value)} className="w-20 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all shadow-sm text-center font-semibold text-slate-700" />
+                                                        <>
+                                                            <input type="text" placeholder="HSN" value={item.hsn || ''} onChange={e=>updateBillItem(item.id, 'hsn', e.target.value)} className="w-20 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all shadow-sm text-center font-semibold text-slate-700" />
+                                                            <select value={item.gst || 0} onChange={e=>updateBillItem(item.id, 'gst', e.target.value)} className="w-28 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500/50 shadow-sm text-center font-bold text-slate-700 cursor-pointer">
+                                                                <option value="0">Non-GST</option>
+                                                                <option value="5">5% GST</option>
+                                                                <option value="12">12% GST</option>
+                                                                <option value="18">18% GST</option>
+                                                                <option value="28">28% GST</option>
+                                                            </select>
+                                                        </>
                                                     )}
 
-                                                    <input type="number" min="1" value={item.qty} placeholder="Qty" onChange={e=>updateBillItem(item.id, 'qty', e.target.value)} className="w-16 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all shadow-sm text-center font-semibold text-slate-700" />
-                                                    <input type="number" min="0" value={item.rate} placeholder="Rate ₹" onChange={e=>updateBillItem(item.id, 'rate', e.target.value)} className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all shadow-sm text-right font-semibold text-slate-700" />
+                                                    {/* ✨ FIX: Added onWheel blur to prevent Qty and Rate from changing while scrolling */}
+                                                    <input type="number" min="1" value={item.qty} placeholder="Qty" onWheel={(e) => e.target.blur()} onChange={e=>updateBillItem(item.id, 'qty', e.target.value)} className="w-16 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all shadow-sm text-center font-semibold text-slate-700" />
+                                                    <input type="number" min="0" value={item.rate} placeholder="Rate ₹" onWheel={(e) => e.target.blur()} onChange={e=>updateBillItem(item.id, 'rate', e.target.value)} className="w-24 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all shadow-sm text-right font-semibold text-slate-700" />
                                                     <button onClick={()=>removeBillItem(item.id)} className={`text-slate-400 hover:text-red-500 hover:bg-red-50 p-2.5 rounded-xl transition-all ${billItems.length === 1 ? 'invisible' : ''}`} title="Remove Row">
                                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
                                                     </button>
@@ -1313,8 +1404,9 @@
                                     </div>
 
                                     {/* Payments & Discounts */}
-                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-inner">
+                                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-inner">
                                         <ModernInput label="Discount (%)" type="number" min="0" max="100" value={billDiscount} onChange={e=>setBillDiscount(e.target.value)} className="bg-white" />
+                                        <ModernInput label="Advance (₹)" type="number" min="0" value={advancePayment} onChange={e=>setAdvancePayment(e.target.value)} className="bg-white text-purple-700" />
                                         <ModernInput label="Paid GPay (₹)" type="number" min="0" value={paidGpay} onChange={e=>setPaidGpay(e.target.value)} className="bg-white text-blue-700" />
                                         <ModernInput label="Paid Cash (₹)" type="number" min="0" value={paidCash} onChange={e=>setPaidCash(e.target.value)} className="bg-white text-emerald-700" />
                                         <div>
@@ -1341,13 +1433,17 @@
                                     </div>
 
                                     {/* Action Buttons */}
-                                    <div className="flex gap-4 mt-2">
-                                        <button onClick={handlePrint} className="w-1/2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold py-4 px-4 rounded-2xl shadow-xl shadow-indigo-200 transition-all transform hover:-translate-y-0.5 active:translate-y-0 active:shadow-md flex justify-center items-center gap-2 text-lg">
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
-                                            Print Bill
+                                    <div className="flex gap-3 mt-2">
+                                        <button onClick={handlePrint} className="w-1/3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold py-3.5 px-2 rounded-2xl shadow-xl shadow-indigo-200 transition-all transform hover:-translate-y-0.5 active:translate-y-0 active:shadow-md flex flex-col justify-center items-center gap-1 text-sm">
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
+                                            Print
                                         </button>
-                                        <button onClick={handleNewBill} className="w-1/2 bg-slate-800 hover:bg-slate-900 text-white font-bold py-4 px-4 rounded-2xl shadow-xl transition-all transform hover:-translate-y-0.5 active:translate-y-0 active:shadow-md flex justify-center items-center gap-2 text-lg">
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
+                                        <button onClick={shareBillWhatsApp} className="w-1/3 bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3.5 px-2 rounded-2xl shadow-xl shadow-emerald-200 transition-all transform hover:-translate-y-0.5 active:translate-y-0 active:shadow-md flex flex-col justify-center items-center gap-1 text-sm">
+                                            <WhatsAppIcon className="h-5 w-5" />
+                                            Share
+                                        </button>
+                                        <button onClick={handleNewBill} className="w-1/3 bg-slate-800 hover:bg-slate-900 text-white font-bold py-3.5 px-2 rounded-2xl shadow-xl transition-all transform hover:-translate-y-0.5 active:translate-y-0 active:shadow-md flex flex-col justify-center items-center gap-1 text-sm">
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
                                             New Bill
                                         </button>
                                     </div>
@@ -1568,6 +1664,12 @@
                                                             <td className="p-4 text-sm font-bold text-right text-amber-600 print:text-black">₹ {bill.balance}</td>
                                                             <td className="p-4 text-center no-print">
                                                                 <div className="flex justify-center gap-1">
+                                                                    {/* ✨ NEW: Send WhatsApp Reminder if balance > 0 */}
+                                                                    {bill.balance > 0 && (
+                                                                        <button onClick={() => sendReminderWhatsApp(bill)} className="text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 p-1.5 rounded transition-colors" title="Send WhatsApp Reminder">
+                                                                            <WhatsAppIcon className="h-5 w-5 mx-auto" />
+                                                                        </button>
+                                                                    )}
                                                                     {/* ✨ NEW: Load Full Bill for Editing */}
                                                                     <button onClick={() => handleEditBill(bill)} className="text-blue-500 hover:text-blue-700 hover:bg-blue-50 p-1.5 rounded transition-colors" title="Edit Full Bill">
                                                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mx-auto" viewBox="0 0 20 20" fill="currentColor"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" /></svg>

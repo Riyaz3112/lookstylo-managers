@@ -242,40 +242,42 @@
             const [customers, setCustomers] = useState(() => JSON.parse(localStorage.getItem('customers') || '{}'));
 
             const DEFAULT_INVENTORY_RAW = {
-                'IPL JERSEY MI - M': 280, 'IPL JERSEY MI - L': 280, 'IPL JERSEY MI - XL': 280,
-                'IPL JERSEY RCB - M': 280, 'IPL JERSEY RCB - L': 280, 'IPL JERSEY RCB - XL': 280,
-                'IPL JERSEY CSK - M': 280, 'IPL JERSEY CSK - L': 280, 'IPL JERSEY CSK - XL': 280,
-                'FOOT BALL JERSEY - M': 280, 'FOOT BALL JERSEY - L': 280, 'FOOT BALL JERSEY - XL': 280,
-                'BACKPRINT DROPSHOLDER - M': 380, 'BACKPRINT DROPSHOLDER - L': 380, 'BACKPRINT DROPSHOLDER - XL': 380, 'BACKPRINT DROPSHOLDER - XXL': 380,
-                'DIS FAB POLO 0838 - M': 500, 'DIS FAB POLO 0838 - L': 500, 'DIS FAB POLO 0838 - XL': 500,
-                'NET FOLDING DROPSHOLDER 0839 - M': 450, 'NET FOLDING DROPSHOLDER 0839 - L': 450, 'NET FOLDING DROPSHOLDER 0839 - XL': 450,
-                'BAGGY TRACK BLACK - M': 280, 'BAGGY TRACK BLACK - L': 280, 'BAGGY TRACK BLACK - XL': 280, 'BAGGY TRACK BLACK - XXL': 280,
-                'BAGGY TRACK RED - M': 280, 'BAGGY TRACK RED - L': 280, 'BAGGY TRACK RED - XL': 280, 'BAGGY TRACK RED - XXL': 280,
-                'BAGGY TRACK SANDLE - M': 280, 'BAGGY TRACK SANDLE - L': 280, 'BAGGY TRACK SANDLE - XL': 280, 'BAGGY TRACK SANDLE - XXL': 280,
+                'IPL JERSEY MI - M': { price: 280, hsn: '', gst: 0, styleCode: '' },
+                'IPL JERSEY RCB - M': { price: 280, hsn: '', gst: 0, styleCode: '' },
+                'IPL JERSEY CSK - M': { price: 280, hsn: '', gst: 0, styleCode: '' },
+                'FOOT BALL JERSEY - M': { price: 280, hsn: '', gst: 0, styleCode: '' },
+                'BACKPRINT DROPSHOLDER - M': { price: 380, hsn: '', gst: 0, styleCode: '' },
+                'DIS FAB POLO 0838 - M': { price: 500, hsn: '', gst: 0, styleCode: '' },
+                'NET FOLDING DROPSHOLDER 0839 - M': { price: 450, hsn: '', gst: 0, styleCode: '' },
+                'BAGGY TRACK BLACK - M': { price: 280, hsn: '', gst: 0, styleCode: '' },
+                'BAGGY TRACK RED - M': { price: 280, hsn: '', gst: 0, styleCode: '' },
+                'BAGGY TRACK SANDLE - M': { price: 280, hsn: '', gst: 0, styleCode: '' }
             };
-            
-            const DEFAULT_INVENTORY = Object.fromEntries(Object.entries(DEFAULT_INVENTORY_RAW).map(([k, v]) => [k, { price: v, hsn: '', gst: 0 }]));
 
             const [inventory, setInventory] = useState(() => {
                 const stored = JSON.parse(localStorage.getItem('inventory'));
-                if (!stored) return DEFAULT_INVENTORY;
+                if (!stored) return DEFAULT_INVENTORY_RAW;
                 const migrated = {};
                 for (const key in stored) {
-                    if (typeof stored[key] === 'number') { migrated[key] = { price: stored[key], hsn: '', gst: 0 }; } 
-                    else { migrated[key] = stored[key]; }
+                    if (typeof stored[key] === 'number') { 
+                        migrated[key] = { price: stored[key], hsn: '', gst: 0, styleCode: '' }; 
+                    } else { 
+                        migrated[key] = { ...stored[key], styleCode: stored[key].styleCode || '' }; 
+                    }
                 }
                 return migrated;
             });
             const [newItemName, setNewItemName] = useState('');
             const [newItemPrice, setNewItemPrice] = useState('');
             const [newItemHsn, setNewItemHsn] = useState(''); 
+            const [newItemStyleCode, setNewItemStyleCode] = useState('');
 
             const handleAddInventory = () => {
                 if (!newItemName.trim() || !newItemPrice) return showNotification("Please enter item name and price.");
                 const upperName = newItemName.trim().toUpperCase();
-                const newInv = { ...inventory, [upperName]: { price: Number(newItemPrice), hsn: newItemHsn.trim(), gst: 0 } };
+                const newInv = { ...inventory, [upperName]: { price: Number(newItemPrice), hsn: newItemHsn.trim(), gst: 0, styleCode: newItemStyleCode.trim().toUpperCase() } };
                 setInventory(newInv); localStorage.setItem('inventory', JSON.stringify(newInv));
-                setNewItemName(''); setNewItemPrice(''); setNewItemHsn('');
+                setNewItemName(''); setNewItemPrice(''); setNewItemHsn(''); setNewItemStyleCode('');
                 showNotification(`${upperName} added to inventory!`);
             };
 
@@ -809,8 +811,6 @@
             const totalGSTSales = reportBills.filter(b => b.type === 'GST').reduce((acc, b) => acc + (b.total || 0), 0);
             const totalNonGSTSales = reportBills.filter(b => b.type !== 'GST').reduce((acc, b) => acc + (b.total || 0), 0);
             
-            const totalNetIncome = totalReportCash + totalReportGpay + totalReportAdvance - totalReportExpenses;
-            
             // ✨ AI Sales Analysis Generation
             const [salesInsight, setSalesInsight] = useState('');
             const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -821,7 +821,6 @@
                 Total Sales: ₹${totalReportSales}
                 Cash + GPay Received: ₹${totalReportCash + totalReportGpay + totalReportAdvance}
                 Total Expenses: ₹${totalReportExpenses}
-                Net Income: ₹${totalNetIncome}
                 Pending Balance (Owed by customers): ₹${totalReportBalance}
                 Keep it very concise, use simple plain text, and no markdown formatting.`;
                 
@@ -854,7 +853,6 @@
                 rows.push(['', '', 'SUMMARY:', 'TOTALS:', totalReportSales, totalReportAdvance, totalReportCash, totalReportGpay, totalReportBalance, '']);
                 rows.push([]);
                 rows.push(['', '', 'DEDUCTIONS:', 'TOTAL EXPENSES:', '', '', '', '', totalReportExpenses, '']);
-                rows.push(['', '', '', 'NET INCOME:', '', '', '', '', totalNetIncome, '']);
 
                 const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
                 const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -1287,6 +1285,9 @@
                                         <ModernInput label="HSN Code" type="text" placeholder="e.g., 6109" value={newItemHsn} onChange={e=>setNewItemHsn(e.target.value)} />
                                     </div>
                                     <div className="w-full md:w-32">
+                                        <ModernInput label="Style Code" type="text" placeholder="e.g., STY-01" value={newItemStyleCode} onChange={e=>setNewItemStyleCode(e.target.value)} />
+                                    </div>
+                                    <div className="w-full md:w-32">
                                         <ModernInput label="Default Price (₹)" type="number" min="0" placeholder="e.g., 350" value={newItemPrice} onChange={e=>setNewItemPrice(e.target.value)} />
                                     </div>
                                     <button onClick={handleAddInventory} className="w-full md:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 px-6 rounded-xl shadow-lg shadow-indigo-200 transition-transform transform hover:-translate-y-0.5">
@@ -1300,6 +1301,7 @@
                                             <tr>
                                                 <th className="p-4 font-bold">Product Name</th>
                                                 <th className="p-4 font-bold text-center">HSN Code</th>
+                                                <th className="p-4 font-bold text-center">Style Code</th>
                                                 <th className="p-4 font-bold text-right">Default Price (₹)</th>
                                                 <th className="p-4 font-bold text-center w-24">Action</th>
                                             </tr>
@@ -1309,6 +1311,7 @@
                                                 <tr key={name} className="hover:bg-slate-50 transition-colors">
                                                     <td className="p-4 font-medium text-slate-700">{name}</td>
                                                     <td className="p-4 font-medium text-slate-600 text-center">{data.hsn || '-'}</td>
+                                                    <td className="p-4 font-medium text-slate-600 text-center">{data.styleCode || '-'}</td>
                                                     <td className="p-4 font-bold text-slate-800 text-right">₹ {data.price}</td>
                                                     <td className="p-4 text-center">
                                                         <button onClick={() => handleDeleteInventory(name)} className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1.5 rounded transition-colors" title="Delete Item">
@@ -1454,8 +1457,8 @@
                                     </div>
                                 )}
 
-                                {/* ✨ UPDATED DASHBOARD WITH EXPENSES AND NET INCOME */}
-                                <div className={`grid grid-cols-2 md:grid-cols-4 gap-6 mb-8 print:gap-4`}>
+                                {/* ✨ UPDATED DASHBOARD WITH EXPENSES */}
+                                <div className={`grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 print:gap-4`}>
                                     <div className="bg-indigo-50 p-5 rounded-2xl border border-indigo-100 flex flex-col justify-center">
                                         <span className="text-xs font-bold text-indigo-500 uppercase tracking-wider mb-1">Total Sales</span>
                                         <span className="text-3xl font-black text-indigo-700">₹ {totalReportSales.toFixed(2)}</span>
@@ -1469,12 +1472,6 @@
                                     <div className="bg-red-50 p-5 rounded-2xl border border-red-100 flex flex-col justify-center">
                                         <span className="text-xs font-bold text-red-600 uppercase tracking-wider mb-1">Total Expenses</span>
                                         <span className="text-2xl font-black text-red-700">₹ {totalReportExpenses.toFixed(2)}</span>
-                                    </div>
-
-                                    <div className="bg-green-50 p-5 rounded-2xl border border-green-500 shadow-sm flex flex-col justify-center relative overflow-hidden">
-                                        <div className="absolute -right-2 -top-2 text-green-200 opacity-30 text-6xl">₹</div>
-                                        <span className="text-xs font-bold text-green-800 uppercase tracking-wider mb-1 relative z-10">Net Income</span>
-                                        <span className="text-3xl font-black text-green-700 relative z-10">₹ {totalNetIncome.toFixed(2)}</span>
                                     </div>
 
                                     {reportFilter === 'All' && (
@@ -1542,6 +1539,7 @@
                                                                             <WhatsAppIcon className="h-5 w-5 mx-auto" />
                                                                         </button>
                                                                     )}
+                                                                    {/* ✨ NEW: Send Thank You Message for Cleared Bills */}
                                                                     {bill.balance <= 0 && bill.total > 0 && (
                                                                         <button onClick={() => sendThankYouWhatsApp(bill)} className="text-pink-500 hover:text-pink-700 hover:bg-pink-50 p-1.5 rounded transition-colors" title="Send Thank You WhatsApp">
                                                                             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mx-auto" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clipRule="evenodd" /></svg>

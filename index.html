@@ -55,6 +55,9 @@
         ::-webkit-scrollbar-track { background: #f1f5f9; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fade-in { animation: fadeIn 0.4s ease-out forwards; }
     </style>
 </head>
 <body class="text-slate-800 antialiased selection:bg-indigo-200 selection:text-indigo-900">
@@ -320,7 +323,7 @@
                         customer: 'Pending Edit', phone: '', address: '', delivery: 'Store Walk-in',
                         courier: 'Professional Courier', tracking: '', discount: 0, promoCode: 'NO CODE',
                         items: [{ id: generateSafeId(), particular: 'PENDING BILL UPDATE', hsn: '', gst: 0, qty: 1, rate: 0 }],
-                        total: 0, cash: 0, gpay: 0, advance: 0, balance: 0
+                        total: 0, cash: 0, gpay: 0, advance: 0, balance: 0, description: ''
                     });
                 }
                 localStorage.setItem('savedBills', JSON.stringify(initialBills));
@@ -367,6 +370,7 @@
             const [paidGpay, setPaidGpay] = useState(bDraft.paidGpay || 0);
             const [paidCash, setPaidCash] = useState(bDraft.paidCash || 0);
             const [advancePayment, setAdvancePayment] = useState(bDraft.advancePayment || 0);
+            const [billDescription, setBillDescription] = useState(bDraft.billDescription || '');
 
             const [paymentModal, setPaymentModal] = useState(null);
             const [editCash, setEditCash] = useState(0);
@@ -395,7 +399,73 @@
             const totalQty = billItems.reduce((acc, item) => acc + Number(item.qty || 0), 0);
             const balanceAmount = grandTotal - (Number(paidGpay) || 0) - (Number(paidCash) || 0) - (Number(advancePayment) || 0);
 
-            // ✨ THANK YOU AND REMINDER HANDLERS
+            // ✨ AI GEMINI API INTEGRATION
+            const callGeminiAPI = async (prompt) => {
+                const apiKey = ""; 
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+                const payload = { contents: [{ parts: [{ text: prompt }] }] };
+                const retries = [1000, 2000, 4000, 8000, 16000];
+                for (let i = 0; i <= retries.length; i++) {
+                    try {
+                        const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                        const result = await response.json();
+                        return result.candidates?.[0]?.content?.parts?.[0]?.text;
+                    } catch (error) {
+                        if (i === retries.length) { showNotification("AI Feature unavailable right now."); return null; }
+                        await new Promise(res => setTimeout(res, retries[i]));
+                    }
+                }
+            };
+
+            // ✨ AI: Format Shipping Address
+            const [isFormattingAddress, setIsFormattingAddress] = useState(false);
+            const handleFormatAddress = async () => {
+                if (!billCustomerAddress || billCustomerAddress.trim().length < 5) return;
+                setIsFormattingAddress(true);
+                const prompt = `Format this Indian shipping address neatly. Capitalize names/cities correctly, ensure logical line breaks (e.g., Name \n Street/Locality \n City, State - Pincode). Remove any messy characters. Return ONLY the formatted address text, no conversational filler. Address: ${billCustomerAddress}`;
+                const formatted = await callGeminiAPI(prompt);
+                if (formatted) setBillCustomerAddress(formatted.trim());
+                setIsFormattingAddress(false);
+            };
+
+            // ✨ AI: Generate Fabric Care Instructions
+            const [isGeneratingCare, setIsGeneratingCare] = useState(false);
+            const handleGenerateCareInstructions = async () => {
+                const itemNames = billItems.map(i => i.particular).filter(Boolean).join(', ');
+                if (!itemNames) return showNotification("Please add some items to the bill first!");
+                
+                setIsGeneratingCare(true);
+                const prompt = `Write a short, professional, and friendly 1-2 sentence care or washing instruction note for the following clothing items: ${itemNames}. Return ONLY the instructions, no introduction, no conversational filler. Keep it suitable for printing directly on a clothing store receipt.`;
+                const result = await callGeminiAPI(prompt);
+                if (result) {
+                    const cleanResult = result.replace(/["*]/g, '').trim(); // clean markdown
+                    setBillDescription(prev => prev ? prev + '\n' + cleanResult : cleanResult);
+                }
+                setIsGeneratingCare(false);
+            };
+
+            // ✨ AI: Generate WhatsApp Follow-up Review Request
+            const handleGenerateReview = async (bill) => {
+                const phone = (bill.phone || '').replace(/\D/g, '');
+                if (!phone) return showNotification("No phone number recorded for this bill.");
+                
+                showNotification("✨ Crafting the perfect message...");
+                const items = bill.items ? bill.items.map(i => i.particular).join(', ') : 'recent clothing purchase';
+                const prompt = `Write a friendly, short WhatsApp message from 'Lookstylo Fashion' to our customer '${bill.customer || 'Customer'}'. 
+                Mention that they recently bought: ${items}.
+                Politely ask if they love the quality and fit. 
+                Kindly request them to leave a 5-star Google review using this link: https://g.page/r/CYYvcLcuUkztECk/review
+                Keep it very concise, highly professional but warm, and use 1 or 2 appropriate emojis. Act as if this is the final text to send. No brackets or placeholders.`;
+                
+                const msg = await callGeminiAPI(prompt);
+                if (msg) {
+                    const targetPhone = phone.length === 10 ? `91${phone}` : phone;
+                    window.open(`https://wa.me/${targetPhone}?text=${encodeURIComponent(msg.trim())}`, '_blank');
+                }
+            };
+
+            // THANK YOU AND REMINDER HANDLERS
             const shareBillWhatsApp = () => {
                 const phone = billCustomerPhone.replace(/\D/g, '');
                 if (!phone) return showNotification("Please enter customer phone number.");
@@ -404,8 +474,8 @@
                 let msg = `Thank you for shopping with us 😀\n\n*Your e-Bill Summary:*\nInvoice: ${billInvoice}\nDate: ${billDate.split('-').reverse().join('-')}\nTotal Amount: ₹ ${grandTotal}\nPaid Amount: ₹ ${totalPaidAndAdvance}\nPending Balance: ₹ ${balanceAmount}\n\n`;
                 
                 if (balanceAmount > 0) {
-                    const upiLink = `upi://pay?pa=9360232391@okbizaxis&pn=LOOKSTYLO%20FASHION&am=${balanceAmount}&cu=INR`;
-                    msg += `👇 *Click to Pay Balance via UPI (GPay/PhonePe):*\n${upiLink}\n\nUPI ID: *9360232391@okbizaxis*\n\n`;
+                    const upiLink = `upi://pay?pa=9360232991@okbizaxis&pn=LOOKSTYLO%20FASHION&am=${balanceAmount}&cu=INR`;
+                    msg += `👇 *Click to Pay Balance via UPI (GPay/PhonePe):*\n${upiLink}\n\nUPI ID: *9360232991@okbizaxis*\n\n`;
                 }
                 
                 msg += `Based on your recent experience, how would you rate your experience at Lookstylo Fashion?\n⭐ Please rate us here: https://g.page/r/CYYvcLcuUkztECk/review`;
@@ -417,8 +487,8 @@
             const sendReminderWhatsApp = (bill) => {
                 const phone = (bill.phone || '').replace(/\D/g, '');
                 if (!phone) return showNotification("No phone number recorded for this bill.");
-                const upiLink = `upi://pay?pa=9360232391@okbizaxis&pn=LOOKSTYLO%20FASHION&am=${bill.balance}&cu=INR`;
-                const msg = `*LOOKSTYLO FASHION - Payment Reminder*\n\nDear ${bill.customer || 'Customer'},\nThis is a friendly reminder for your pending balance of *₹ ${bill.balance}* against Invoice ${bill.id}.\n\nPlease clear the dues at your earliest convenience.\n\n👇 *Click to Pay Balance via UPI (GPay/PhonePe):*\n${upiLink}\n\nUPI ID: *9360232391@okbizaxis*\n\nThank you!`;
+                const upiLink = `upi://pay?pa=9360232991@okbizaxis&pn=LOOKSTYLO%20FASHION&am=${bill.balance}&cu=INR`;
+                const msg = `*LOOKSTYLO FASHION - Payment Reminder*\n\nDear ${bill.customer || 'Customer'},\nThis is a friendly reminder for your pending balance of *₹ ${bill.balance}* against Invoice ${bill.id}.\n\nPlease clear the dues at your earliest convenience.\n\n👇 *Click to Pay Balance via UPI (GPay/PhonePe):*\n${upiLink}\n\nUPI ID: *9360232991@okbizaxis*\n\nThank you!`;
                 const targetPhone = phone.length === 10 ? `91${phone}` : phone;
                 window.open(`https://wa.me/${targetPhone}?text=${encodeURIComponent(msg)}`, '_blank');
             };
@@ -487,6 +557,7 @@
                 setBillCustomerPhone(billToEdit.phone || ''); setBillCustomerAddress(billToEdit.address || '');
                 setBillDelivery(billToEdit.delivery || 'Store Walk-in'); setBillCourier(billToEdit.courier || 'Professional Courier');
                 setBillTracking(billToEdit.tracking || ''); setBillDiscount(billToEdit.discount || 0); setBillPromoCode(billToEdit.promoCode || 'NO CODE');
+                setBillDescription(billToEdit.description || '');
                 
                 if (billToEdit.items && billToEdit.items.length > 0) { setBillItems(billToEdit.items); } 
                 else { setBillItems([{ id: generateSafeId(), particular: 'Restored Legacy Bill (Items missing)', hsn: '', gst: 0, qty: 1, rate: billToEdit.total }]); }
@@ -504,9 +575,9 @@
             }, [orderId, toName, toAddress, toPhone, billName, billAddress, billPhone]);
 
             useEffect(() => {
-                const draft = { billDate, billInvoice, billType, billCustomerName, billCustomerPhone, billCustomerAddress, billDelivery, billCourier, billTracking, billDiscount, billPromoCode, billItems, paidGpay, paidCash, advancePayment };
+                const draft = { billDate, billInvoice, billType, billCustomerName, billCustomerPhone, billCustomerAddress, billDelivery, billCourier, billTracking, billDiscount, billPromoCode, billItems, paidGpay, paidCash, advancePayment, billDescription };
                 localStorage.setItem('billingDraft', JSON.stringify(draft));
-            }, [billDate, billInvoice, billType, billCustomerName, billCustomerPhone, billCustomerAddress, billDelivery, billCourier, billTracking, billDiscount, billPromoCode, billItems, paidGpay, paidCash, advancePayment]);
+            }, [billDate, billInvoice, billType, billCustomerName, billCustomerPhone, billCustomerAddress, billDelivery, billCourier, billTracking, billDiscount, billPromoCode, billItems, paidGpay, paidCash, advancePayment, billDescription]);
 
             const handlePhoneChange = (e) => {
                 const val = e.target.value;
@@ -515,43 +586,6 @@
                     if (!billCustomerName) setBillCustomerName(customers[val].name || '');
                     if (!billCustomerAddress) setBillCustomerAddress(customers[val].address || '');
                 }
-            };
-
-            const currentMonthStr = todayStr.substring(0, 7); 
-            const currentYearStr = todayStr.substring(0, 4); 
-            const [reportType, setReportType] = useState('daily'); 
-            const [reportDate, setReportDate] = useState(todayStr);
-            const [reportMonth, setReportMonth] = useState(currentMonthStr);
-            const [reportYear, setReportYear] = useState(currentYearStr);
-            const [reportFilter, setReportFilter] = useState('All'); 
-
-            const [isFormattingAddress, setIsFormattingAddress] = useState(false);
-
-            const callGeminiAPI = async (prompt) => {
-                const apiKey = ""; 
-                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
-                const payload = { contents: [{ parts: [{ text: prompt }] }] };
-                const retries = [1000, 2000, 4000, 8000, 16000];
-                for (let i = 0; i <= retries.length; i++) {
-                    try {
-                        const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-                        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                        const result = await response.json();
-                        return result.candidates?.[0]?.content?.parts?.[0]?.text;
-                    } catch (error) {
-                        if (i === retries.length) { showNotification("AI Feature unavailable right now."); return null; }
-                        await new Promise(res => setTimeout(res, retries[i]));
-                    }
-                }
-            };
-
-            const handleFormatAddress = async () => {
-                if (!billCustomerAddress || billCustomerAddress.trim().length < 5) return;
-                setIsFormattingAddress(true);
-                const prompt = `Format this Indian shipping address neatly. Capitalize names/cities correctly, ensure logical line breaks (e.g., Name \n Street/Locality \n City, State - Pincode). Remove any messy characters. Return ONLY the formatted address text, no conversational filler. Address: ${billCustomerAddress}`;
-                const formatted = await callGeminiAPI(prompt);
-                if (formatted) setBillCustomerAddress(formatted.trim());
-                setIsFormattingAddress(false);
             };
 
             const [scanResult, setScanResult] = useState(null);
@@ -618,7 +652,7 @@
                     phone: billCustomerPhone, address: billCustomerAddress, delivery: billDelivery,
                     courier: billCourier, tracking: billTracking, discount: billDiscount, promoCode: billPromoCode,
                     items: billItems, total: grandTotal, cash: Number(paidCash) || 0, gpay: Number(paidGpay) || 0,
-                    advance: Number(advancePayment) || 0, balance: balanceAmount
+                    advance: Number(advancePayment) || 0, balance: balanceAmount, description: billDescription
                 };
 
                 setSavedBills(prevBills => {
@@ -643,7 +677,7 @@
                     if (totalQty > 0 || paidCash > 0 || paidGpay > 0 || advancePayment > 0) { saveCurrentBill(); }
                 }, 1000); 
                 return () => clearTimeout(timer);
-            }, [billInvoice, billDate, billType, billCustomerName, billCustomerPhone, billCustomerAddress, billDelivery, billCourier, billTracking, billDiscount, billPromoCode, billItems, grandTotal, paidCash, paidGpay, advancePayment, balanceAmount, totalQty]);
+            }, [billInvoice, billDate, billType, billCustomerName, billCustomerPhone, billCustomerAddress, billDelivery, billCourier, billTracking, billDiscount, billPromoCode, billItems, grandTotal, paidCash, paidGpay, advancePayment, balanceAmount, totalQty, billDescription]);
 
             const handleNewBill = () => {
                 saveCurrentBill();
@@ -668,6 +702,7 @@
                 isEditingRef.current = false;
                 setBillCustomerName(''); setBillType('Non-GST'); setBillCustomerPhone(''); setBillCustomerAddress('');
                 setBillTracking(''); setBillDiscount(0); setPaidGpay(0); setPaidCash(0); setAdvancePayment(0); setBillPromoCode('NO CODE');
+                setBillDescription('');
                 setBillItems([{ id: generateSafeId(), particular: '', hsn: '', gst: 0, qty: 1, rate: 0 }]); 
                 
                 const today = new Date().toISOString().split('T')[0];
@@ -734,6 +769,14 @@
             const addBillItem = () => setBillItems([...billItems, { id: generateSafeId(), particular: '', hsn: '', gst: 0, qty: 1, rate: 0 }]);
             const removeBillItem = (id) => setBillItems(billItems.filter(i => i.id !== id));
             
+            const currentMonthStr = todayStr.substring(0, 7); 
+            const currentYearStr = todayStr.substring(0, 4); 
+            const [reportType, setReportType] = useState('daily'); 
+            const [reportDate, setReportDate] = useState(todayStr);
+            const [reportMonth, setReportMonth] = useState(currentMonthStr);
+            const [reportYear, setReportYear] = useState(currentYearStr);
+            const [reportFilter, setReportFilter] = useState('All'); 
+
             const baseReportBills = savedBills.filter(b => {
                 if (!b.date) return false;
                 if (reportType === 'daily') return b.date === reportDate;
@@ -768,6 +811,28 @@
             
             const totalNetIncome = totalReportCash + totalReportGpay + totalReportAdvance - totalReportExpenses;
             
+            // ✨ AI Sales Analysis Generation
+            const [salesInsight, setSalesInsight] = useState('');
+            const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+            const handleAnalyzeSales = async () => {
+                setIsAnalyzing(true);
+                const prompt = `Act as a helpful business advisor for Lookstylo Fashion. Give a 2-sentence encouraging business analysis and one short actionable tip based on the following financial performance data:
+                Total Sales: ₹${totalReportSales}
+                Cash + GPay Received: ₹${totalReportCash + totalReportGpay + totalReportAdvance}
+                Total Expenses: ₹${totalReportExpenses}
+                Net Income: ₹${totalNetIncome}
+                Pending Balance (Owed by customers): ₹${totalReportBalance}
+                Keep it very concise, use simple plain text, and no markdown formatting.`;
+                
+                const result = await callGeminiAPI(prompt);
+                if (result) setSalesInsight(result.trim());
+                setIsAnalyzing(false);
+            };
+
+            // Clear insight when period changes
+            useEffect(() => { setSalesInsight(''); }, [reportType, reportDate, reportMonth, reportYear]);
+
             let periodLabel = '';
             if (reportType === 'daily') { periodLabel = new Date(reportDate).toLocaleDateString('en-GB'); } 
             else if (reportType === 'monthly') {
@@ -778,18 +843,18 @@
             const exportToCSV = () => {
                 if (reportBills.length === 0) { showNotification("No data to export for this period!"); return; }
 
-                const headers = ['Date', 'Invoice ID', 'Type', 'Customer Name', 'Total Amount (Rs)', 'Advance Paid (Rs)', 'Cash Paid (Rs)', 'G-Pay Paid (Rs)', 'Pending Balance (Rs)'];
+                const headers = ['Date', 'Invoice ID', 'Type', 'Customer Name', 'Total Amount (Rs)', 'Advance Paid (Rs)', 'Cash Paid (Rs)', 'G-Pay Paid (Rs)', 'Pending Balance (Rs)', 'Description'];
                 const rows = reportBills.slice().reverse().map(bill => [
                     bill.date.split('-').reverse().join('-'), bill.id, bill.type || 'Non-GST',
                     `"${(bill.customer || '').replace(/"/g, '""')}"`, bill.total || 0, bill.advance || 0,
-                    bill.cash || 0, bill.gpay || 0, bill.balance || 0
+                    bill.cash || 0, bill.gpay || 0, bill.balance || 0, `"${(bill.description || '').replace(/"/g, '""')}"`
                 ]);
 
                 rows.push([]);
-                rows.push(['', '', 'SUMMARY:', 'TOTALS:', totalReportSales, totalReportAdvance, totalReportCash, totalReportGpay, totalReportBalance]);
+                rows.push(['', '', 'SUMMARY:', 'TOTALS:', totalReportSales, totalReportAdvance, totalReportCash, totalReportGpay, totalReportBalance, '']);
                 rows.push([]);
-                rows.push(['', '', 'DEDUCTIONS:', 'TOTAL EXPENSES:', '', '', '', '', totalReportExpenses]);
-                rows.push(['', '', '', 'NET INCOME:', '', '', '', '', totalNetIncome]);
+                rows.push(['', '', 'DEDUCTIONS:', 'TOTAL EXPENSES:', '', '', '', '', totalReportExpenses, '']);
+                rows.push(['', '', '', 'NET INCOME:', '', '', '', '', totalNetIncome, '']);
 
                 const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
                 const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -891,6 +956,12 @@
                         <div className="pt-2 flex justify-between mt-2 shrink-0">
                             <div className="w-[55%] text-[10px] text-gray-600 flex flex-col justify-between">
                                 <div>
+                                    {billDescription && (
+                                        <div className="mb-2 bg-gray-50 p-1.5 rounded border border-gray-200">
+                                            <p className="font-bold text-gray-800 mb-0.5">Description / Notes:</p>
+                                            <p className="text-gray-700 whitespace-pre-wrap">{billDescription}</p>
+                                        </div>
+                                    )}
                                     <p className="font-bold text-gray-800 mb-1">Terms & Conditions:</p>
                                     <ul className="list-disc pl-3 space-y-0.5">{terms.map((t, i) => <li key={i}>{t}</li>)}</ul>
                                     <p className="mt-2 text-xs italic">Thank you for shopping with us!</p>
@@ -905,7 +976,7 @@
                                 </div>
                                 {balanceAmount > 0 && (
                                     <div className="mt-3 flex items-center gap-2 border-2 border-slate-300 p-1.5 rounded-lg bg-slate-50 w-fit">
-                                        <QRCodeRender data={`upi://pay?pa=9360232391@okbizaxis&pn=LOOKSTYLO%20FASHION&am=${balanceAmount.toFixed(2)}&cu=INR`} size={50} />
+                                        <QRCodeRender data={`upi://pay?pa=9360232991@okbizaxis&pn=LOOKSTYLO%20FASHION&am=${balanceAmount.toFixed(2)}&cu=INR`} size={50} />
                                         <div>
                                             <p className="text-[9px] font-bold text-gray-900 leading-tight uppercase tracking-wider mb-0.5">Scan to Pay</p>
                                             <p className="text-[11px] font-black text-indigo-700">₹ {balanceAmount.toFixed(2)}</p>
@@ -929,7 +1000,7 @@
                                 </div>
                                 {balanceAmount > 0 && (
                                     <div className="mt-1.5 flex justify-end no-print">
-                                        <a href={`upi://pay?pa=9360232391@okbizaxis&pn=LOOKSTYLO%20FASHION&am=${balanceAmount}&cu=INR`} target="_blank" className="bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1.5 rounded shadow-sm text-[9px] font-bold flex items-center gap-1 uppercase tracking-wider transition-colors">
+                                        <a href={`upi://pay?pa=9360232991@okbizaxis&pn=LOOKSTYLO%20FASHION&am=${balanceAmount}&cu=INR`} target="_blank" className="bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1.5 rounded shadow-sm text-[9px] font-bold flex items-center gap-1 uppercase tracking-wider transition-colors">
                                             <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.381z" clipRule="evenodd" /></svg>
                                             Pay ₹{balanceAmount.toFixed(2)}
                                         </a>
@@ -1122,6 +1193,17 @@
                                                 Add New Item
                                             </button>
                                         </div>
+                                    </div>
+
+                                    {/* ✨ NEW: Bill Description / Notes */}
+                                    <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100 shadow-sm">
+                                        <div className="flex justify-between items-end mb-1.5 ml-1">
+                                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">Bill Description / Notes (Optional)</label>
+                                            <button onClick={handleGenerateCareInstructions} disabled={isGeneratingCare} className="text-xs font-bold text-indigo-600 hover:text-indigo-800 transition-colors flex items-center gap-1 disabled:opacity-50">
+                                                {isGeneratingCare ? '✨ Generating...' : '✨ Add Care Instructions'}
+                                            </button>
+                                        </div>
+                                        <textarea rows="2" value={billDescription} onChange={e=>setBillDescription(e.target.value)} placeholder="Add any special remarks, warranty notes, or description for this bill..." className="w-full p-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-sm font-medium shadow-sm resize-none"></textarea>
                                     </div>
 
                                     <div className="grid grid-cols-2 md:grid-cols-5 gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-inner">
@@ -1353,8 +1435,24 @@
                                             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
                                             Print Report
                                         </button>
+                                        {/* ✨ NEW: AI Insight Generator Button */}
+                                        <button onClick={handleAnalyzeSales} disabled={isAnalyzing} className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold py-2.5 px-5 rounded-2xl shadow-sm transition-transform transform hover:-translate-y-0.5 flex items-center gap-2">
+                                            {isAnalyzing ? '✨ Analyzing...' : '✨ AI Business Insights'}
+                                        </button>
                                     </div>
                                 </div>
+
+                                {/* ✨ NEW: Display AI Business Insights */}
+                                {salesInsight && (
+                                    <div className="mb-6 p-6 rounded-2xl bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-100 shadow-sm relative overflow-hidden animate-fade-in no-print">
+                                        <div className="absolute -right-4 -top-4 text-indigo-200 opacity-30 text-8xl">✨</div>
+                                        <h3 className="text-indigo-800 font-extrabold mb-2 flex items-center gap-2">
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" /></svg>
+                                            AI Advisor Insights
+                                        </h3>
+                                        <p className="text-slate-700 font-medium leading-relaxed relative z-10 whitespace-pre-wrap">{salesInsight}</p>
+                                    </div>
+                                )}
 
                                 {/* ✨ UPDATED DASHBOARD WITH EXPENSES AND NET INCOME */}
                                 <div className={`grid grid-cols-2 md:grid-cols-4 gap-6 mb-8 print:gap-4`}>
@@ -1434,12 +1532,16 @@
                                                             <td className="p-4 text-sm font-bold text-right text-amber-600 print:text-black">₹ {bill.balance}</td>
                                                             <td className="p-4 text-center no-print">
                                                                 <div className="flex justify-center gap-1">
+                                                                    {/* ✨ NEW: Send AI Generated Review WhatsApp */}
+                                                                    <button onClick={() => handleGenerateReview(bill)} className="text-amber-500 hover:text-amber-700 hover:bg-amber-50 p-1.5 rounded transition-colors" title="✨ Generate AI Review Request">
+                                                                        <span className="font-bold text-sm">✨</span>
+                                                                    </button>
+
                                                                     {bill.balance > 0 && (
                                                                         <button onClick={() => sendReminderWhatsApp(bill)} className="text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 p-1.5 rounded transition-colors" title="Send WhatsApp Reminder">
                                                                             <WhatsAppIcon className="h-5 w-5 mx-auto" />
                                                                         </button>
                                                                     )}
-                                                                    {/* ✨ NEW: Send Thank You Message for Cleared Bills */}
                                                                     {bill.balance <= 0 && bill.total > 0 && (
                                                                         <button onClick={() => sendThankYouWhatsApp(bill)} className="text-pink-500 hover:text-pink-700 hover:bg-pink-50 p-1.5 rounded transition-colors" title="Send Thank You WhatsApp">
                                                                             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mx-auto" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clipRule="evenodd" /></svg>

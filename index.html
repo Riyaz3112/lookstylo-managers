@@ -204,7 +204,8 @@
                     inventory: localStorage.getItem('inventory'),
                     shopExpenses: localStorage.getItem('shopExpenses'),
                     customers: localStorage.getItem('customers'),
-                    invoiceCounters: localStorage.getItem('invoiceCounters')
+                    invoiceCounters: localStorage.getItem('invoiceCounters'),
+                    cashRegisters: localStorage.getItem('cashRegisters') // Include new cash registers
                 };
                 const blob = new Blob([JSON.stringify(backupData)], { type: "application/json" });
                 const url = URL.createObjectURL(blob);
@@ -229,6 +230,7 @@
                         if(data.shopExpenses) localStorage.setItem('shopExpenses', data.shopExpenses);
                         if(data.customers) localStorage.setItem('customers', data.customers);
                         if(data.invoiceCounters) localStorage.setItem('invoiceCounters', data.invoiceCounters);
+                        if(data.cashRegisters) localStorage.setItem('cashRegisters', data.cashRegisters); // Import cash registers
                         
                         alert("Data imported successfully! The app will now reload to apply your data.");
                         window.location.reload();
@@ -295,15 +297,16 @@
             const [expDate, setExpDate] = useState(todayStr);
             const [expDesc, setExpDesc] = useState('');
             const [expAmount, setExpAmount] = useState('');
+            const [expMode, setExpMode] = useState('Cash'); // ✨ NEW: Expense Payment Mode
 
             const handleAddExpense = () => {
                 if (!expDesc.trim() || !expAmount) return showNotification("Please enter description and amount.");
-                const newExp = { id: generateSafeId(), date: expDate, description: expDesc.trim(), amount: Number(expAmount) };
+                const newExp = { id: generateSafeId(), date: expDate, description: expDesc.trim(), amount: Number(expAmount), mode: expMode };
                 const updated = [newExp, ...expenses];
                 setExpenses(updated);
                 localStorage.setItem('shopExpenses', JSON.stringify(updated));
                 setExpDesc(''); setExpAmount('');
-                showNotification("Expense recorded!");
+                showNotification(`${expMode} Expense recorded!`);
             };
 
             const handleDeleteExpense = (id) => {
@@ -1020,6 +1023,78 @@
                 );
             };
 
+            // ✨ CASH & BANK REGISTER LOGIC
+            const [cashDate, setCashDate] = useState(todayStr);
+            const defaultDenoms = { '500': '', '200': '', '100': '', '50': '', '20': '', '10': '', '5': '', '2': '', '1': '' };
+            const denomKeys = [500, 200, 100, 50, 20, 10, 5, 2, 1];
+            const [denominations, setDenominations] = useState(defaultDenoms);
+            const [openingBank, setOpeningBank] = useState(0);
+            const [actualBank, setActualBank] = useState(0);
+            const [savedRegisters, setSavedRegisters] = useState(() => JSON.parse(localStorage.getItem('cashRegisters') || '{}'));
+
+            useEffect(() => {
+                const data = JSON.parse(localStorage.getItem('cashRegisters') || '{}');
+                if (data[cashDate]) {
+                    setDenominations(data[cashDate].counts || defaultDenoms);
+                    setOpeningBank(data[cashDate].openingBank || 0);
+                    setActualBank(data[cashDate].actualBank || 0);
+                } else {
+                    setDenominations(defaultDenoms);
+                    setActualBank(0);
+                    
+                    // Attempt to auto-fill opening bank balance from the previous day's closing
+                    const dateObj = new Date(cashDate);
+                    dateObj.setDate(dateObj.getDate() - 1);
+                    const prevDateStr = dateObj.toISOString().split('T')[0];
+                    if (data[prevDateStr] && data[prevDateStr].actualBank) {
+                        setOpeningBank(data[prevDateStr].actualBank);
+                    } else {
+                        setOpeningBank(0);
+                    }
+                }
+            }, [cashDate]);
+
+            // Cash Math
+            const physicalTotal = denomKeys.reduce((acc, val) => acc + (val * (Number(denominations[val]) || 0)), 0);
+            const billsTodayForCash = savedBills.filter(b => b.date === cashDate);
+            // ✨ FIX: Included advance payments in expected Cash Drawer logic.
+            const cashSalesToday = billsTodayForCash.reduce((acc, b) => acc + (Number(b.cash) || 0) + (Number(b.advance) || 0), 0);
+            
+            const expensesTodayForCash = expenses.filter(e => e.date === cashDate);
+            const cashExpensesToday = expensesTodayForCash.filter(e => e.mode !== 'Bank').reduce((acc, e) => acc + (Number(e.amount) || 0), 0);
+            const expectedSystemCash = cashSalesToday - cashExpensesToday;
+            const cashDifference = physicalTotal - expectedSystemCash;
+
+            // Bank Math
+            const gpaySalesToday = billsTodayForCash.reduce((acc, b) => acc + (Number(b.gpay) || 0), 0);
+            const bankExpensesToday = expensesTodayForCash.filter(e => e.mode === 'Bank').reduce((acc, e) => acc + (Number(e.amount) || 0), 0);
+            const expectedBank = Number(openingBank) + gpaySalesToday - bankExpensesToday;
+            const bankDifference = Number(actualBank) - expectedBank;
+
+            const handleSaveCashRegister = () => {
+                const newRegisters = {
+                    ...savedRegisters,
+                    [cashDate]: {
+                        counts: denominations,
+                        physicalTotal,
+                        expectedSystemCash,
+                        difference: cashDifference,
+                        openingBank: Number(openingBank),
+                        actualBank: Number(actualBank),
+                        expectedBank,
+                        bankDifference,
+                        lastUpdated: new Date().toISOString()
+                    }
+                };
+                setSavedRegisters(newRegisters);
+                localStorage.setItem('cashRegisters', JSON.stringify(newRegisters));
+                showNotification(`Register for ${cashDate} saved successfully!`);
+            };
+
+            const updateDenomination = (val, count) => {
+                setDenominations(prev => ({ ...prev, [val]: count }));
+            };
+
             return (
                 <div className="min-h-screen flex flex-col relative">
                     {activeTab === 'reports' ? (
@@ -1070,7 +1145,7 @@
                     )}
 
                     <nav className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-4 shadow-xl sticky top-0 z-50 border-b border-indigo-900/50 no-print">
-                        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+                        <div className="max-w-7xl mx-auto flex flex-col xl:flex-row justify-between items-center gap-4">
                             <div className="flex items-center gap-4">
                                 <h1 className="text-2xl font-black tracking-tight flex items-center gap-3 bg-clip-text text-transparent bg-gradient-to-r from-white to-indigo-200">
                                     {logoUrl ? <img src={logoUrl} alt="Logo" className="h-10 w-10 object-contain rounded-lg bg-white p-0.5" /> : <StoreLogo className="w-8 h-8 text-indigo-400" />}
@@ -1087,7 +1162,8 @@
                                 <TabButton id="billing" label="Billing" activeTab={activeTab} setActiveTab={setActiveTab} />
                                 <TabButton id="inventory" label="Inventory" activeTab={activeTab} setActiveTab={setActiveTab} />
                                 <TabButton id="expenses" label="Expenses" activeTab={activeTab} setActiveTab={setActiveTab} />
-                                <TabButton id="reports" label="Sales Reports" activeTab={activeTab} setActiveTab={setActiveTab} />
+                                <TabButton id="cashcount" label="Cash & Bank" activeTab={activeTab} setActiveTab={setActiveTab} />
+                                <TabButton id="reports" label="Reports" activeTab={activeTab} setActiveTab={setActiveTab} />
                                 <TabButton id="generator" label="Manual Label" activeTab={activeTab} setActiveTab={setActiveTab} />
                                 <TabButton id="scanner" label="Scanner" activeTab={activeTab} setActiveTab={setActiveTab} />
                                 <TabButton id="settings" label="Settings" activeTab={activeTab} setActiveTab={setActiveTab} />
@@ -1344,7 +1420,14 @@
                                     <div className="flex-1 w-full">
                                         <ModernInput label="Expense Description" type="text" placeholder="e.g., Tea, Shop Rent, Transport" value={expDesc} onChange={e=>setExpDesc(e.target.value)} />
                                     </div>
-                                    <div className="w-full md:w-40">
+                                    <div className="w-full md:w-32">
+                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 ml-1">Paid Via</label>
+                                        <select value={expMode} onChange={e=>setExpMode(e.target.value)} className="w-full p-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-sm font-bold text-slate-700 shadow-sm cursor-pointer">
+                                            <option value="Cash">💵 Cash</option>
+                                            <option value="Bank">🏦 Bank/UPI</option>
+                                        </select>
+                                    </div>
+                                    <div className="w-full md:w-36">
                                         <ModernInput label="Amount (₹)" type="number" min="0" placeholder="e.g., 150" value={expAmount} onChange={e=>setExpAmount(e.target.value)} />
                                     </div>
                                     <button onClick={handleAddExpense} className="w-full md:w-auto bg-red-500 hover:bg-red-600 text-white font-bold py-3.5 px-6 rounded-xl shadow-lg shadow-red-200 transition-transform transform hover:-translate-y-0.5">
@@ -1358,7 +1441,7 @@
                                             <tr>
                                                 <th className="p-4 font-bold w-32">Date</th>
                                                 <th className="p-4 font-bold">Description</th>
-                                                <th className="p-4 font-bold text-right w-32">Amount (₹)</th>
+                                                <th className="p-4 font-bold text-right w-40">Amount (₹)</th>
                                                 <th className="p-4 font-bold text-center w-24">Action</th>
                                             </tr>
                                         </thead>
@@ -1370,7 +1453,12 @@
                                                     <tr key={exp.id} className="hover:bg-slate-50 transition-colors">
                                                         <td className="p-4 font-medium text-slate-600">{exp.date.split('-').reverse().join('-')}</td>
                                                         <td className="p-4 font-medium text-slate-800">{exp.description}</td>
-                                                        <td className="p-4 font-bold text-red-600 text-right">₹ {exp.amount}</td>
+                                                        <td className="p-4 font-bold text-red-600 text-right">
+                                                            ₹ {exp.amount}
+                                                            <span className={`block text-[10px] font-normal mt-0.5 ${exp.mode === 'Bank' ? 'text-blue-500' : 'text-emerald-500'}`}>
+                                                                {exp.mode === 'Bank' ? '🏦 Bank/UPI' : '💵 Cash'}
+                                                            </span>
+                                                        </td>
                                                         <td className="p-4 text-center">
                                                             <button onClick={() => handleDeleteExpense(exp.id)} className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1.5 rounded transition-colors" title="Delete Expense">
                                                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mx-auto" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
@@ -1381,6 +1469,138 @@
                                             )}
                                         </tbody>
                                     </table>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* -------------------- TAB: CASH COUNT ✨ -------------------- */}
+                        {activeTab === 'cashcount' && (
+                            <div className="w-full max-w-5xl mx-auto bg-white p-8 rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100">
+                                <div className="flex justify-between items-center border-b border-slate-100 pb-4 mb-6">
+                                    <div>
+                                        <h2 className="text-3xl font-extrabold text-slate-800">Cash & Bank Register</h2>
+                                        <p className="text-sm text-slate-500 font-medium mt-1">Balance your physical cash drawer and verify your bank deposits.</p>
+                                    </div>
+                                    <div className="w-48">
+                                        <ModernInput label="Select Date" type="date" value={cashDate} onChange={e=>setCashDate(e.target.value)} />
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-12 gap-8">
+                                    {/* Denominations List */}
+                                    <div className="md:col-span-6 space-y-3">
+                                        <h3 className="text-lg font-bold text-slate-700 mb-4 px-2">Cash Denominations</h3>
+                                        {denomKeys.map(denom => (
+                                            <div key={denom} className="flex items-center gap-4 bg-slate-50 p-2.5 rounded-2xl border border-slate-100 hover:border-emerald-200 transition-colors">
+                                                <div className="w-16 font-extrabold text-slate-700 text-right text-lg shrink-0">
+                                                    <span className="text-slate-400 font-medium text-sm mr-1">₹</span>{denom}
+                                                </div>
+                                                <span className="text-slate-400 font-bold">X</span>
+                                                <input 
+                                                    type="number" 
+                                                    min="0" 
+                                                    value={denominations[denom]} 
+                                                    onChange={e => updateDenomination(denom, e.target.value)} 
+                                                    onWheel={(e) => e.target.blur()}
+                                                    placeholder="0"
+                                                    className="w-20 p-2.5 bg-white border border-slate-300 rounded-xl focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none text-center font-bold text-lg shadow-sm"
+                                                />
+                                                <div className="flex-1 font-black text-emerald-700 text-right text-xl tracking-tight pr-2">
+                                                    <span className="text-emerald-300 font-medium text-base mr-1">= ₹</span>
+                                                    {(denom * (Number(denominations[denom]) || 0)).toLocaleString('en-IN')}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    {/* Summary & Balancing */}
+                                    <div className="md:col-span-6 space-y-6">
+                                        
+                                        {/* CASH SUMMARY */}
+                                        <div className="bg-slate-800 p-6 rounded-3xl text-white shadow-lg">
+                                            <h3 className="text-lg font-extrabold text-emerald-300 mb-4 uppercase tracking-widest text-center">💵 Cash Summary</h3>
+                                            
+                                            <div className="space-y-3">
+                                                <div className="flex justify-between text-sm">
+                                                    <span className="text-slate-400">Total Cash Sales Today:</span>
+                                                    <span className="text-emerald-400 font-bold">+ ₹ {cashSalesToday.toLocaleString('en-IN')}</span>
+                                                </div>
+                                                <div className="flex justify-between text-sm border-b border-slate-600 pb-3">
+                                                    <span className="text-slate-400">Cash Expenses Today:</span>
+                                                    <span className="text-red-400 font-bold">- ₹ {cashExpensesToday.toLocaleString('en-IN')}</span>
+                                                </div>
+
+                                                <div className="flex justify-between items-center bg-slate-700/50 p-3 rounded-xl border border-slate-600">
+                                                    <span className="font-bold text-emerald-100">Expected System Cash:</span>
+                                                    <span className="text-lg font-bold text-emerald-100">₹ {expectedSystemCash.toLocaleString('en-IN')}</span>
+                                                </div>
+                                                
+                                                <div className="flex justify-between items-end pt-2">
+                                                    <span className="text-slate-300 font-medium">Physical Cash Total:</span>
+                                                    <span className="text-2xl font-black text-white">₹ {physicalTotal.toLocaleString('en-IN')}</span>
+                                                </div>
+
+                                                <div className={`mt-2 p-3 rounded-2xl flex justify-between items-center border-2 ${cashDifference === 0 ? 'bg-emerald-500/10 border-emerald-500/50' : cashDifference > 0 ? 'bg-emerald-500/10 border-emerald-500/50' : 'bg-red-500/10 border-red-500/50'}`}>
+                                                    <span className="text-xs font-bold uppercase tracking-wider text-slate-300">
+                                                        Diff:
+                                                    </span>
+                                                    <span className={`text-lg font-black ${cashDifference === 0 ? 'text-emerald-400' : cashDifference > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                                        {cashDifference > 0 ? '+' : ''} ₹ {cashDifference.toLocaleString('en-IN')}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* BANK SUMMARY */}
+                                        <div className="bg-slate-900 p-6 rounded-3xl text-white shadow-lg">
+                                            <h3 className="text-lg font-extrabold text-blue-300 mb-4 uppercase tracking-widest text-center">🏦 Bank Summary</h3>
+                                            
+                                            <div className="space-y-4">
+                                                <div>
+                                                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 ml-1">Opening Bank Balance (Start of Day)</label>
+                                                    <input type="number" value={openingBank} onChange={e=>setOpeningBank(e.target.value)} className="w-full p-2.5 bg-slate-800 border border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-white font-bold placeholder-slate-500 text-sm" placeholder="0" />
+                                                </div>
+                                                
+                                                <div className="pt-1 space-y-2">
+                                                    <div className="flex justify-between text-sm">
+                                                        <span className="text-slate-400">GPay/UPI Received Today:</span>
+                                                        <span className="text-blue-400 font-bold">+ ₹ {gpaySalesToday.toLocaleString('en-IN')}</span>
+                                                    </div>
+                                                    <div className="flex justify-between text-sm border-b border-slate-700 pb-3">
+                                                        <span className="text-slate-400">Bank Expenses Today:</span>
+                                                        <span className="text-red-400 font-bold">- ₹ {bankExpensesToday.toLocaleString('en-IN')}</span>
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex justify-between items-center bg-slate-800/50 p-3 rounded-xl border border-slate-700">
+                                                    <span className="font-bold text-blue-100">Expected Bank Bal:</span>
+                                                    <span className="text-lg font-bold text-blue-100">₹ {expectedBank.toLocaleString('en-IN')}</span>
+                                                </div>
+
+                                                <div>
+                                                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 ml-1">Actual Bank Balance (End of Day)</label>
+                                                    <input type="number" value={actualBank} onChange={e=>setActualBank(e.target.value)} className="w-full p-2.5 bg-slate-800 border border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-white font-bold text-lg placeholder-slate-500" placeholder="Check Bank App" />
+                                                </div>
+
+                                                <div className={`mt-2 p-3 rounded-2xl flex justify-between items-center border-2 ${bankDifference === 0 ? 'bg-emerald-500/10 border-emerald-500/50' : bankDifference > 0 ? 'bg-blue-500/10 border-blue-500/50' : 'bg-red-500/10 border-red-500/50'}`}>
+                                                    <span className="text-xs font-bold uppercase text-slate-300">Diff:</span>
+                                                    <span className={`text-lg font-black ${bankDifference === 0 ? 'text-emerald-400' : bankDifference > 0 ? 'text-blue-400' : 'text-red-400'}`}>
+                                                        {bankDifference > 0 ? '+' : ''} ₹ {bankDifference.toLocaleString('en-IN')}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <button onClick={handleSaveCashRegister} className="mt-4 w-full bg-gradient-to-r from-emerald-500 to-blue-600 hover:from-emerald-400 hover:to-blue-500 text-white font-black py-4 rounded-2xl shadow-lg transition-transform transform hover:-translate-y-0.5 text-lg uppercase tracking-wider">
+                                            💾 Save Daily Register
+                                        </button>
+                                        
+                                        {savedRegisters[cashDate] && savedRegisters[cashDate].lastUpdated && (
+                                            <p className="text-center text-[10px] text-slate-400 mt-2 font-medium">
+                                                Last saved: {new Date(savedRegisters[cashDate].lastUpdated).toLocaleString()}
+                                            </p>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         )}

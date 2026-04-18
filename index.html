@@ -205,7 +205,8 @@
                     shopExpenses: localStorage.getItem('shopExpenses'),
                     customers: localStorage.getItem('customers'),
                     invoiceCounters: localStorage.getItem('invoiceCounters'),
-                    cashRegisters: localStorage.getItem('cashRegisters') // Include new cash registers
+                    savedScans: localStorage.getItem('savedScans'),
+                    logoUrl: localStorage.getItem('logoUrl')
                 };
                 const blob = new Blob([JSON.stringify(backupData)], { type: "application/json" });
                 const url = URL.createObjectURL(blob);
@@ -230,7 +231,8 @@
                         if(data.shopExpenses) localStorage.setItem('shopExpenses', data.shopExpenses);
                         if(data.customers) localStorage.setItem('customers', data.customers);
                         if(data.invoiceCounters) localStorage.setItem('invoiceCounters', data.invoiceCounters);
-                        if(data.cashRegisters) localStorage.setItem('cashRegisters', data.cashRegisters); // Import cash registers
+                        if(data.savedScans) localStorage.setItem('savedScans', data.savedScans);
+                        if(data.logoUrl) localStorage.setItem('logoUrl', data.logoUrl);
                         
                         alert("Data imported successfully! The app will now reload to apply your data.");
                         window.location.reload();
@@ -243,6 +245,7 @@
 
             const [customers, setCustomers] = useState(() => JSON.parse(localStorage.getItem('customers') || '{}'));
 
+            // ✨ INVENTORY MANAGEMENT
             const DEFAULT_INVENTORY_RAW = {
                 'IPL JERSEY MI - M': { price: 280, hsn: '', gst: 0, styleCode: '' },
                 'IPL JERSEY RCB - M': { price: 280, hsn: '', gst: 0, styleCode: '' },
@@ -297,7 +300,7 @@
             const [expDate, setExpDate] = useState(todayStr);
             const [expDesc, setExpDesc] = useState('');
             const [expAmount, setExpAmount] = useState('');
-            const [expMode, setExpMode] = useState('Cash'); // ✨ NEW: Expense Payment Mode
+            const [expMode, setExpMode] = useState('Cash');
 
             const handleAddExpense = () => {
                 if (!expDesc.trim() || !expAmount) return showNotification("Please enter description and amount.");
@@ -404,75 +407,53 @@
             const totalQty = billItems.reduce((acc, item) => acc + Number(item.qty || 0), 0);
             const balanceAmount = grandTotal - (Number(paidGpay) || 0) - (Number(paidCash) || 0) - (Number(advancePayment) || 0);
 
-            // ✨ AI GEMINI API INTEGRATION
-            const callGeminiAPI = async (prompt) => {
-                const apiKey = ""; 
-                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
-                const payload = { contents: [{ parts: [{ text: prompt }] }] };
-                const retries = [1000, 2000, 4000, 8000, 16000];
-                for (let i = 0; i <= retries.length; i++) {
-                    try {
-                        const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-                        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                        const result = await response.json();
-                        return result.candidates?.[0]?.content?.parts?.[0]?.text;
-                    } catch (error) {
-                        if (i === retries.length) { showNotification("AI Feature unavailable right now."); return null; }
-                        await new Promise(res => setTimeout(res, retries[i]));
-                    }
-                }
+            const formatPhoneForWa = (phone) => {
+                if (!phone) return null;
+                const cleaned = phone.replace(/\D/g, '');
+                return cleaned.length === 10 ? `91${cleaned}` : cleaned;
             };
 
-            // ✨ AI: Format Shipping Address
-            const [isFormattingAddress, setIsFormattingAddress] = useState(false);
-            const handleFormatAddress = async () => {
-                if (!billCustomerAddress || billCustomerAddress.trim().length < 5) return;
-                setIsFormattingAddress(true);
-                const prompt = `Format this Indian shipping address neatly. Capitalize names/cities correctly, ensure logical line breaks (e.g., Name \n Street/Locality \n City, State - Pincode). Remove any messy characters. Return ONLY the formatted address text, no conversational filler. Address: ${billCustomerAddress}`;
-                const formatted = await callGeminiAPI(prompt);
-                if (formatted) setBillCustomerAddress(formatted.trim());
-                setIsFormattingAddress(false);
+            // ✨ WhatsApp Scanner Messaging Logic
+            const handleDispatchTomorrow = (order) => {
+                setScanResult(null); // Reset UI first
+                const phone = formatPhoneForWa(order.phone);
+                if (!phone) { showNotification("Scan Saved! (No phone to send WhatsApp)"); return; }
+                const msg = `*LOOKSTYLO FASHION*\n\nDear ${order.name || 'Customer'},\nSorry for the delay! 🙏 Your order (${order.id}) will be dispatched tomorrow. We appreciate your patience.\n\nThank you for shopping with us!`;
+                window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
             };
 
-            // ✨ AI: Generate Fabric Care Instructions
-            const [isGeneratingCare, setIsGeneratingCare] = useState(false);
-            const handleGenerateCareInstructions = async () => {
-                const itemNames = billItems.map(i => i.particular).filter(Boolean).join(', ');
-                if (!itemNames) return showNotification("Please add some items to the bill first!");
-                
-                setIsGeneratingCare(true);
-                const prompt = `Write a short, professional, and friendly 1-2 sentence care or washing instruction note for the following clothing items: ${itemNames}. Return ONLY the instructions, no introduction, no conversational filler. Keep it suitable for printing directly on a clothing store receipt.`;
-                const result = await callGeminiAPI(prompt);
-                if (result) {
-                    const cleanResult = result.replace(/["*]/g, '').trim(); // clean markdown
-                    setBillDescription(prev => prev ? prev + '\n' + cleanResult : cleanResult);
-                }
-                setIsGeneratingCare(false);
+            const handleDispatchToday = (order) => {
+                setAwaitingTrackingFor(order);
+                setScanResult(null); // Reset UI first to show the tracking scanner
+                const phone = formatPhoneForWa(order.phone);
+                if (!phone) { showNotification("Scan Saved! (No phone to send WhatsApp)"); return; }
+                const msg = `*LOOKSTYLO FASHION*\n\nDear ${order.name || 'Customer'},\nGreat news! 🎉 Your order (${order.id}) is scheduled to be dispatched today.\nWe will share the tracking details with you shortly.\n\nThank you for shopping with us!`;
+                window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
             };
 
-            // ✨ AI: Generate WhatsApp Follow-up Review Request
-            const handleGenerateReview = async (bill) => {
-                const phone = (bill.phone || '').replace(/\D/g, '');
-                if (!phone) return showNotification("No phone number recorded for this bill.");
-                
-                showNotification("✨ Crafting the perfect message...");
-                const items = bill.items ? bill.items.map(i => i.particular).join(', ') : 'recent clothing purchase';
-                const prompt = `Write a friendly, short WhatsApp message from 'Lookstylo Fashion' to our customer '${bill.customer || 'Customer'}'. 
-                Mention that they recently bought: ${items}.
-                Politely ask if they love the quality and fit. 
-                Kindly request them to leave a 5-star Google review using this link: https://g.page/r/CYYvcLcuUkztECk/review
-                Keep it very concise, highly professional but warm, and use 1 or 2 appropriate emojis. Act as if this is the final text to send. No brackets or placeholders.`;
-                
-                const msg = await callGeminiAPI(prompt);
-                if (msg) {
-                    const targetPhone = phone.length === 10 ? `91${phone}` : phone;
-                    window.open(`https://wa.me/${targetPhone}?text=${encodeURIComponent(msg.trim())}`, '_blank');
+            const handleScannedTracking = (order, trackingId) => {
+                // ✨ Update Database with tracking ID
+                setSavedScans(prev => {
+                    const updated = prev.map(s => s.id === order.id ? { ...s, trackingId } : s);
+                    localStorage.setItem('savedScans', JSON.stringify(updated));
+                    return updated;
+                });
+                setAwaitingTrackingFor(null);
+
+                const phone = formatPhoneForWa(order.phone);
+                if (!phone) { 
+                    showNotification("Tracking Saved! (No phone to send WhatsApp)"); 
+                    return; 
                 }
+
+                const msg = `*LOOKSTYLO FASHION*\n\nDear ${order.name || 'Customer'},\nYour order (${order.id}) has been successfully dispatched! 🚚\n\n*Tracking ID:* ${trackingId}\n\nYou can use this ID to track your package on the courier website.\n\nThank you for shopping with us!`;
+                window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
+                showNotification("Tracking Saved & WhatsApp Sent!");
             };
 
             // THANK YOU AND REMINDER HANDLERS
             const shareBillWhatsApp = () => {
-                const phone = billCustomerPhone.replace(/\D/g, '');
+                const phone = formatPhoneForWa(billCustomerPhone);
                 if (!phone) return showNotification("Please enter customer phone number.");
                 const totalPaidAndAdvance = Number(paidCash) + Number(paidGpay) + Number(advancePayment);
                 
@@ -485,25 +466,22 @@
                 
                 msg += `Based on your recent experience, how would you rate your experience at Lookstylo Fashion?\n⭐ Please rate us here: https://g.page/r/CYYvcLcuUkztECk/review`;
                 
-                const targetPhone = phone.length === 10 ? `91${phone}` : phone;
-                window.open(`https://wa.me/${targetPhone}?text=${encodeURIComponent(msg)}`, '_blank');
+                window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
             };
 
             const sendReminderWhatsApp = (bill) => {
-                const phone = (bill.phone || '').replace(/\D/g, '');
+                const phone = formatPhoneForWa(bill.phone);
                 if (!phone) return showNotification("No phone number recorded for this bill.");
                 const upiLink = `upi://pay?pa=9360232991@okbizaxis&pn=LOOKSTYLO%20FASHION&am=${bill.balance}&cu=INR`;
                 const msg = `*LOOKSTYLO FASHION - Payment Reminder*\n\nDear ${bill.customer || 'Customer'},\nThis is a friendly reminder for your pending balance of *₹ ${bill.balance}* against Invoice ${bill.id}.\n\nPlease clear the dues at your earliest convenience.\n\n👇 *Click to Pay Balance via UPI (GPay/PhonePe):*\n${upiLink}\n\nUPI ID: *9360232991@okbizaxis*\n\nThank you!`;
-                const targetPhone = phone.length === 10 ? `91${phone}` : phone;
-                window.open(`https://wa.me/${targetPhone}?text=${encodeURIComponent(msg)}`, '_blank');
+                window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
             };
 
             const sendThankYouWhatsApp = (bill) => {
-                const phone = (bill.phone || '').replace(/\D/g, '');
+                const phone = formatPhoneForWa(bill.phone);
                 if (!phone) return showNotification("No phone number recorded for this bill.");
                 const msg = `*LOOKSTYLO FASHION*\n\nDear ${bill.customer || 'Customer'},\nThank you for clearing your pending dues for Invoice ${bill.id}. Your balance is now settled! 🎉\n\nThank you for shopping with us! We look forward to serving you again.`;
-                const targetPhone = phone.length === 10 ? `91${phone}` : phone;
-                window.open(`https://wa.me/${targetPhone}?text=${encodeURIComponent(msg)}`, '_blank');
+                window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
             };
 
             const handleUpdatePayment = () => {
@@ -594,13 +572,20 @@
             };
 
             const [scanResult, setScanResult] = useState(null);
+            const [awaitingTrackingFor, _setAwaitingTrackingFor] = useState(null);
+            const awaitingTrackingRef = useRef(null);
+            const setAwaitingTrackingFor = (val) => {
+                awaitingTrackingRef.current = val;
+                _setAwaitingTrackingFor(val);
+            };
+
             const [syncStatus, setSyncStatus] = useState('');
             const [savedScans, setSavedScans] = useState(() => JSON.parse(localStorage.getItem('savedScans') || '[]'));
             const scannerRef = useRef(null);
 
             const saveScanToDatabase = (data) => {
                 setSavedScans(prev => {
-                    const newScan = { ...data, scanId: generateSafeId(), scanDate: new Date().toLocaleString() };
+                    const newScan = { ...data, scanId: generateSafeId(), scanDate: new Date().toLocaleString(), trackingId: null };
                     const updated = [newScan, ...prev];
                     localStorage.setItem('savedScans', JSON.stringify(updated));
                     return updated;
@@ -634,20 +619,31 @@
                             try {
                                 scannerRef.current = new Html5QrcodeScanner("reader", { fps: 10, qrbox: {width: 250, height: 250} }, false);
                                 scannerRef.current.render((decodedText) => {
-                                        let parsed;
-                                        try { parsed = JSON.parse(decodedText); } catch (e) { parsed = { id: decodedText, name: 'Unknown (Raw Text)' }; }
-                                        setScanResult(parsed); saveScanToDatabase(parsed);
-                                        if (scannerRef.current) { scannerRef.current.clear().catch(e => console.error(e)); scannerRef.current = null; }
+                                        const awaiting = awaitingTrackingRef.current;
+                                        if (awaiting) {
+                                            handleScannedTracking(awaiting, decodedText);
+                                            if (scannerRef.current) { scannerRef.current.clear().catch(e => console.error(e)); scannerRef.current = null; }
+                                        } else {
+                                            let parsed;
+                                            try { parsed = JSON.parse(decodedText); } catch (e) { parsed = { id: decodedText, name: 'Unknown (Raw Text)' }; }
+                                            setScanResult(parsed); saveScanToDatabase(parsed);
+                                            if (scannerRef.current) { scannerRef.current.clear().catch(e => console.error(e)); scannerRef.current = null; }
+                                        }
                                     },
                                     (err) => { /* ignore background scan errors safely */ }
                                 );
                             } catch (err) { console.error("Scanner initialization failed:", err); }
                         }
-                    } else if (activeTab === 'scanner' && !scanResult && isMounted) { timeoutId = setTimeout(initScanner, 100); }
+                    } else if (activeTab === 'scanner' && !scanResult && isMounted) { 
+                        timeoutId = setTimeout(initScanner, 100); 
+                    }
                 };
 
                 if (activeTab === 'scanner' && !scanResult) { initScanner(); }
-                return () => { isMounted = false; clearTimeout(timeoutId); if (scannerRef.current) { scannerRef.current.clear().catch(e => console.error(e)); scannerRef.current = null; } };
+                return () => { 
+                    isMounted = false; clearTimeout(timeoutId); 
+                    if (scannerRef.current) { scannerRef.current.clear().catch(e => console.error(e)); scannerRef.current = null; } 
+                };
             }, [activeTab, scanResult]);
 
             const saveCurrentBill = () => {
@@ -814,27 +810,6 @@
             const totalGSTSales = reportBills.filter(b => b.type === 'GST').reduce((acc, b) => acc + (b.total || 0), 0);
             const totalNonGSTSales = reportBills.filter(b => b.type !== 'GST').reduce((acc, b) => acc + (b.total || 0), 0);
             
-            // ✨ AI Sales Analysis Generation
-            const [salesInsight, setSalesInsight] = useState('');
-            const [isAnalyzing, setIsAnalyzing] = useState(false);
-
-            const handleAnalyzeSales = async () => {
-                setIsAnalyzing(true);
-                const prompt = `Act as a helpful business advisor for Lookstylo Fashion. Give a 2-sentence encouraging business analysis and one short actionable tip based on the following financial performance data:
-                Total Sales: ₹${totalReportSales}
-                Cash + GPay Received: ₹${totalReportCash + totalReportGpay + totalReportAdvance}
-                Total Expenses: ₹${totalReportExpenses}
-                Pending Balance (Owed by customers): ₹${totalReportBalance}
-                Keep it very concise, use simple plain text, and no markdown formatting.`;
-                
-                const result = await callGeminiAPI(prompt);
-                if (result) setSalesInsight(result.trim());
-                setIsAnalyzing(false);
-            };
-
-            // Clear insight when period changes
-            useEffect(() => { setSalesInsight(''); }, [reportType, reportDate, reportMonth, reportYear]);
-
             let periodLabel = '';
             if (reportType === 'daily') { periodLabel = new Date(reportDate).toLocaleDateString('en-GB'); } 
             else if (reportType === 'monthly') {
@@ -1023,78 +998,6 @@
                 );
             };
 
-            // ✨ CASH & BANK REGISTER LOGIC
-            const [cashDate, setCashDate] = useState(todayStr);
-            const defaultDenoms = { '500': '', '200': '', '100': '', '50': '', '20': '', '10': '', '5': '', '2': '', '1': '' };
-            const denomKeys = [500, 200, 100, 50, 20, 10, 5, 2, 1];
-            const [denominations, setDenominations] = useState(defaultDenoms);
-            const [openingBank, setOpeningBank] = useState(0);
-            const [actualBank, setActualBank] = useState(0);
-            const [savedRegisters, setSavedRegisters] = useState(() => JSON.parse(localStorage.getItem('cashRegisters') || '{}'));
-
-            useEffect(() => {
-                const data = JSON.parse(localStorage.getItem('cashRegisters') || '{}');
-                if (data[cashDate]) {
-                    setDenominations(data[cashDate].counts || defaultDenoms);
-                    setOpeningBank(data[cashDate].openingBank || 0);
-                    setActualBank(data[cashDate].actualBank || 0);
-                } else {
-                    setDenominations(defaultDenoms);
-                    setActualBank(0);
-                    
-                    // Attempt to auto-fill opening bank balance from the previous day's closing
-                    const dateObj = new Date(cashDate);
-                    dateObj.setDate(dateObj.getDate() - 1);
-                    const prevDateStr = dateObj.toISOString().split('T')[0];
-                    if (data[prevDateStr] && data[prevDateStr].actualBank) {
-                        setOpeningBank(data[prevDateStr].actualBank);
-                    } else {
-                        setOpeningBank(0);
-                    }
-                }
-            }, [cashDate]);
-
-            // Cash Math
-            const physicalTotal = denomKeys.reduce((acc, val) => acc + (val * (Number(denominations[val]) || 0)), 0);
-            const billsTodayForCash = savedBills.filter(b => b.date === cashDate);
-            // ✨ FIX: Included advance payments in expected Cash Drawer logic.
-            const cashSalesToday = billsTodayForCash.reduce((acc, b) => acc + (Number(b.cash) || 0) + (Number(b.advance) || 0), 0);
-            
-            const expensesTodayForCash = expenses.filter(e => e.date === cashDate);
-            const cashExpensesToday = expensesTodayForCash.filter(e => e.mode !== 'Bank').reduce((acc, e) => acc + (Number(e.amount) || 0), 0);
-            const expectedSystemCash = cashSalesToday - cashExpensesToday;
-            const cashDifference = physicalTotal - expectedSystemCash;
-
-            // Bank Math
-            const gpaySalesToday = billsTodayForCash.reduce((acc, b) => acc + (Number(b.gpay) || 0), 0);
-            const bankExpensesToday = expensesTodayForCash.filter(e => e.mode === 'Bank').reduce((acc, e) => acc + (Number(e.amount) || 0), 0);
-            const expectedBank = Number(openingBank) + gpaySalesToday - bankExpensesToday;
-            const bankDifference = Number(actualBank) - expectedBank;
-
-            const handleSaveCashRegister = () => {
-                const newRegisters = {
-                    ...savedRegisters,
-                    [cashDate]: {
-                        counts: denominations,
-                        physicalTotal,
-                        expectedSystemCash,
-                        difference: cashDifference,
-                        openingBank: Number(openingBank),
-                        actualBank: Number(actualBank),
-                        expectedBank,
-                        bankDifference,
-                        lastUpdated: new Date().toISOString()
-                    }
-                };
-                setSavedRegisters(newRegisters);
-                localStorage.setItem('cashRegisters', JSON.stringify(newRegisters));
-                showNotification(`Register for ${cashDate} saved successfully!`);
-            };
-
-            const updateDenomination = (val, count) => {
-                setDenominations(prev => ({ ...prev, [val]: count }));
-            };
-
             return (
                 <div className="min-h-screen flex flex-col relative">
                     {activeTab === 'reports' ? (
@@ -1162,7 +1065,6 @@
                                 <TabButton id="billing" label="Billing" activeTab={activeTab} setActiveTab={setActiveTab} />
                                 <TabButton id="inventory" label="Inventory" activeTab={activeTab} setActiveTab={setActiveTab} />
                                 <TabButton id="expenses" label="Expenses" activeTab={activeTab} setActiveTab={setActiveTab} />
-                                <TabButton id="cashcount" label="Cash & Bank" activeTab={activeTab} setActiveTab={setActiveTab} />
                                 <TabButton id="reports" label="Reports" activeTab={activeTab} setActiveTab={setActiveTab} />
                                 <TabButton id="generator" label="Manual Label" activeTab={activeTab} setActiveTab={setActiveTab} />
                                 <TabButton id="scanner" label="Scanner" activeTab={activeTab} setActiveTab={setActiveTab} />
@@ -1218,9 +1120,6 @@
                                                 <div className="md:col-span-2">
                                                     <div className="flex justify-between items-end mb-1.5 ml-1">
                                                         <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">Shipping Address (For Label)</label>
-                                                        <button onClick={handleFormatAddress} disabled={isFormattingAddress} className="text-xs font-bold text-indigo-600 hover:text-indigo-800 transition-colors flex items-center gap-1 disabled:opacity-50">
-                                                            {isFormattingAddress ? '✨ Formatting...' : '✨ Auto-Format'}
-                                                        </button>
                                                     </div>
                                                     <textarea rows="3" value={billCustomerAddress} onChange={e=>setBillCustomerAddress(e.target.value)} placeholder="Full Delivery Address" className="w-full p-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-sm font-medium shadow-sm resize-none"></textarea>
                                                 </div>
@@ -1273,9 +1172,6 @@
                                     <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100 shadow-sm">
                                         <div className="flex justify-between items-end mb-1.5 ml-1">
                                             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">Bill Description / Notes (Optional)</label>
-                                            <button onClick={handleGenerateCareInstructions} disabled={isGeneratingCare} className="text-xs font-bold text-indigo-600 hover:text-indigo-800 transition-colors flex items-center gap-1 disabled:opacity-50">
-                                                {isGeneratingCare ? '✨ Generating...' : '✨ Add Care Instructions'}
-                                            </button>
                                         </div>
                                         <textarea rows="2" value={billDescription} onChange={e=>setBillDescription(e.target.value)} placeholder="Add any special remarks, warranty notes, or description for this bill..." className="w-full p-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-sm font-medium shadow-sm resize-none"></textarea>
                                     </div>
@@ -1473,138 +1369,6 @@
                             </div>
                         )}
 
-                        {/* -------------------- TAB: CASH COUNT ✨ -------------------- */}
-                        {activeTab === 'cashcount' && (
-                            <div className="w-full max-w-5xl mx-auto bg-white p-8 rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100">
-                                <div className="flex justify-between items-center border-b border-slate-100 pb-4 mb-6">
-                                    <div>
-                                        <h2 className="text-3xl font-extrabold text-slate-800">Cash & Bank Register</h2>
-                                        <p className="text-sm text-slate-500 font-medium mt-1">Balance your physical cash drawer and verify your bank deposits.</p>
-                                    </div>
-                                    <div className="w-48">
-                                        <ModernInput label="Select Date" type="date" value={cashDate} onChange={e=>setCashDate(e.target.value)} />
-                                    </div>
-                                </div>
-
-                                <div className="grid grid-cols-1 md:grid-cols-12 gap-8">
-                                    {/* Denominations List */}
-                                    <div className="md:col-span-6 space-y-3">
-                                        <h3 className="text-lg font-bold text-slate-700 mb-4 px-2">Cash Denominations</h3>
-                                        {denomKeys.map(denom => (
-                                            <div key={denom} className="flex items-center gap-4 bg-slate-50 p-2.5 rounded-2xl border border-slate-100 hover:border-emerald-200 transition-colors">
-                                                <div className="w-16 font-extrabold text-slate-700 text-right text-lg shrink-0">
-                                                    <span className="text-slate-400 font-medium text-sm mr-1">₹</span>{denom}
-                                                </div>
-                                                <span className="text-slate-400 font-bold">X</span>
-                                                <input 
-                                                    type="number" 
-                                                    min="0" 
-                                                    value={denominations[denom]} 
-                                                    onChange={e => updateDenomination(denom, e.target.value)} 
-                                                    onWheel={(e) => e.target.blur()}
-                                                    placeholder="0"
-                                                    className="w-20 p-2.5 bg-white border border-slate-300 rounded-xl focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none text-center font-bold text-lg shadow-sm"
-                                                />
-                                                <div className="flex-1 font-black text-emerald-700 text-right text-xl tracking-tight pr-2">
-                                                    <span className="text-emerald-300 font-medium text-base mr-1">= ₹</span>
-                                                    {(denom * (Number(denominations[denom]) || 0)).toLocaleString('en-IN')}
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-
-                                    {/* Summary & Balancing */}
-                                    <div className="md:col-span-6 space-y-6">
-                                        
-                                        {/* CASH SUMMARY */}
-                                        <div className="bg-slate-800 p-6 rounded-3xl text-white shadow-lg">
-                                            <h3 className="text-lg font-extrabold text-emerald-300 mb-4 uppercase tracking-widest text-center">💵 Cash Summary</h3>
-                                            
-                                            <div className="space-y-3">
-                                                <div className="flex justify-between text-sm">
-                                                    <span className="text-slate-400">Total Cash Sales Today:</span>
-                                                    <span className="text-emerald-400 font-bold">+ ₹ {cashSalesToday.toLocaleString('en-IN')}</span>
-                                                </div>
-                                                <div className="flex justify-between text-sm border-b border-slate-600 pb-3">
-                                                    <span className="text-slate-400">Cash Expenses Today:</span>
-                                                    <span className="text-red-400 font-bold">- ₹ {cashExpensesToday.toLocaleString('en-IN')}</span>
-                                                </div>
-
-                                                <div className="flex justify-between items-center bg-slate-700/50 p-3 rounded-xl border border-slate-600">
-                                                    <span className="font-bold text-emerald-100">Expected System Cash:</span>
-                                                    <span className="text-lg font-bold text-emerald-100">₹ {expectedSystemCash.toLocaleString('en-IN')}</span>
-                                                </div>
-                                                
-                                                <div className="flex justify-between items-end pt-2">
-                                                    <span className="text-slate-300 font-medium">Physical Cash Total:</span>
-                                                    <span className="text-2xl font-black text-white">₹ {physicalTotal.toLocaleString('en-IN')}</span>
-                                                </div>
-
-                                                <div className={`mt-2 p-3 rounded-2xl flex justify-between items-center border-2 ${cashDifference === 0 ? 'bg-emerald-500/10 border-emerald-500/50' : cashDifference > 0 ? 'bg-emerald-500/10 border-emerald-500/50' : 'bg-red-500/10 border-red-500/50'}`}>
-                                                    <span className="text-xs font-bold uppercase tracking-wider text-slate-300">
-                                                        Diff:
-                                                    </span>
-                                                    <span className={`text-lg font-black ${cashDifference === 0 ? 'text-emerald-400' : cashDifference > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                                        {cashDifference > 0 ? '+' : ''} ₹ {cashDifference.toLocaleString('en-IN')}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {/* BANK SUMMARY */}
-                                        <div className="bg-slate-900 p-6 rounded-3xl text-white shadow-lg">
-                                            <h3 className="text-lg font-extrabold text-blue-300 mb-4 uppercase tracking-widest text-center">🏦 Bank Summary</h3>
-                                            
-                                            <div className="space-y-4">
-                                                <div>
-                                                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 ml-1">Opening Bank Balance (Start of Day)</label>
-                                                    <input type="number" value={openingBank} onChange={e=>setOpeningBank(e.target.value)} className="w-full p-2.5 bg-slate-800 border border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-white font-bold placeholder-slate-500 text-sm" placeholder="0" />
-                                                </div>
-                                                
-                                                <div className="pt-1 space-y-2">
-                                                    <div className="flex justify-between text-sm">
-                                                        <span className="text-slate-400">GPay/UPI Received Today:</span>
-                                                        <span className="text-blue-400 font-bold">+ ₹ {gpaySalesToday.toLocaleString('en-IN')}</span>
-                                                    </div>
-                                                    <div className="flex justify-between text-sm border-b border-slate-700 pb-3">
-                                                        <span className="text-slate-400">Bank Expenses Today:</span>
-                                                        <span className="text-red-400 font-bold">- ₹ {bankExpensesToday.toLocaleString('en-IN')}</span>
-                                                    </div>
-                                                </div>
-
-                                                <div className="flex justify-between items-center bg-slate-800/50 p-3 rounded-xl border border-slate-700">
-                                                    <span className="font-bold text-blue-100">Expected Bank Bal:</span>
-                                                    <span className="text-lg font-bold text-blue-100">₹ {expectedBank.toLocaleString('en-IN')}</span>
-                                                </div>
-
-                                                <div>
-                                                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 ml-1">Actual Bank Balance (End of Day)</label>
-                                                    <input type="number" value={actualBank} onChange={e=>setActualBank(e.target.value)} className="w-full p-2.5 bg-slate-800 border border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-white font-bold text-lg placeholder-slate-500" placeholder="Check Bank App" />
-                                                </div>
-
-                                                <div className={`mt-2 p-3 rounded-2xl flex justify-between items-center border-2 ${bankDifference === 0 ? 'bg-emerald-500/10 border-emerald-500/50' : bankDifference > 0 ? 'bg-blue-500/10 border-blue-500/50' : 'bg-red-500/10 border-red-500/50'}`}>
-                                                    <span className="text-xs font-bold uppercase text-slate-300">Diff:</span>
-                                                    <span className={`text-lg font-black ${bankDifference === 0 ? 'text-emerald-400' : bankDifference > 0 ? 'text-blue-400' : 'text-red-400'}`}>
-                                                        {bankDifference > 0 ? '+' : ''} ₹ {bankDifference.toLocaleString('en-IN')}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <button onClick={handleSaveCashRegister} className="mt-4 w-full bg-gradient-to-r from-emerald-500 to-blue-600 hover:from-emerald-400 hover:to-blue-500 text-white font-black py-4 rounded-2xl shadow-lg transition-transform transform hover:-translate-y-0.5 text-lg uppercase tracking-wider">
-                                            💾 Save Daily Register
-                                        </button>
-                                        
-                                        {savedRegisters[cashDate] && savedRegisters[cashDate].lastUpdated && (
-                                            <p className="text-center text-[10px] text-slate-400 mt-2 font-medium">
-                                                Last saved: {new Date(savedRegisters[cashDate].lastUpdated).toLocaleString()}
-                                            </p>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
                         {/* -------------------- TAB: REPORTS -------------------- */}
                         {activeTab === 'reports' && (
                             <div className="w-full max-w-5xl mx-auto bg-white p-8 rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100 print:shadow-none print:border-none print:p-0 print:max-w-full">
@@ -1658,24 +1422,8 @@
                                             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
                                             Print Report
                                         </button>
-                                        {/* ✨ NEW: AI Insight Generator Button */}
-                                        <button onClick={handleAnalyzeSales} disabled={isAnalyzing} className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold py-2.5 px-5 rounded-2xl shadow-sm transition-transform transform hover:-translate-y-0.5 flex items-center gap-2">
-                                            {isAnalyzing ? '✨ Analyzing...' : '✨ AI Business Insights'}
-                                        </button>
                                     </div>
                                 </div>
-
-                                {/* ✨ NEW: Display AI Business Insights */}
-                                {salesInsight && (
-                                    <div className="mb-6 p-6 rounded-2xl bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-100 shadow-sm relative overflow-hidden animate-fade-in no-print">
-                                        <div className="absolute -right-4 -top-4 text-indigo-200 opacity-30 text-8xl">✨</div>
-                                        <h3 className="text-indigo-800 font-extrabold mb-2 flex items-center gap-2">
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" /></svg>
-                                            AI Advisor Insights
-                                        </h3>
-                                        <p className="text-slate-700 font-medium leading-relaxed relative z-10 whitespace-pre-wrap">{salesInsight}</p>
-                                    </div>
-                                )}
 
                                 {/* ✨ UPDATED DASHBOARD WITH EXPENSES */}
                                 <div className={`grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 print:gap-4`}>
@@ -1749,17 +1497,11 @@
                                                             <td className="p-4 text-sm font-bold text-right text-amber-600 print:text-black">₹ {bill.balance}</td>
                                                             <td className="p-4 text-center no-print">
                                                                 <div className="flex justify-center gap-1">
-                                                                    {/* ✨ NEW: Send AI Generated Review WhatsApp */}
-                                                                    <button onClick={() => handleGenerateReview(bill)} className="text-amber-500 hover:text-amber-700 hover:bg-amber-50 p-1.5 rounded transition-colors" title="✨ Generate AI Review Request">
-                                                                        <span className="font-bold text-sm">✨</span>
-                                                                    </button>
-
                                                                     {bill.balance > 0 && (
                                                                         <button onClick={() => sendReminderWhatsApp(bill)} className="text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 p-1.5 rounded transition-colors" title="Send WhatsApp Reminder">
                                                                             <WhatsAppIcon className="h-5 w-5 mx-auto" />
                                                                         </button>
                                                                     )}
-                                                                    {/* ✨ NEW: Send Thank You Message for Cleared Bills */}
                                                                     {bill.balance <= 0 && bill.total > 0 && (
                                                                         <button onClick={() => sendThankYouWhatsApp(bill)} className="text-pink-500 hover:text-pink-700 hover:bg-pink-50 p-1.5 rounded transition-colors" title="Send Thank You WhatsApp">
                                                                             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mx-auto" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clipRule="evenodd" /></svg>
@@ -1822,29 +1564,52 @@
                                     <div className="w-16 h-16 bg-indigo-50 rounded-2xl flex items-center justify-center mb-6 shadow-inner">
                                         <span className="text-3xl">📷</span>
                                     </div>
-                                    <h2 className="text-3xl font-extrabold text-slate-800 mb-8 text-center">Scan Order QR Code</h2>
+                                    <h2 className="text-3xl font-extrabold text-slate-800 mb-8 text-center">Dispatch Scanner</h2>
                                     
                                     {!scanResult && (
-                                        <div className="w-full max-w-md bg-slate-50 p-4 rounded-3xl border-2 border-dashed border-slate-300">
-                                            <div id="reader" className="w-full rounded-2xl overflow-hidden min-h-[250px]"></div>
+                                        <div className={`w-full max-w-md p-6 rounded-3xl border-2 border-dashed ${awaitingTrackingFor ? 'bg-amber-50 border-amber-300' : 'bg-slate-50 border-slate-300'}`}>
+                                            <h3 className={`text-center font-bold text-lg mb-4 ${awaitingTrackingFor ? 'text-amber-800' : 'text-slate-700'}`}>
+                                                {awaitingTrackingFor ? `Scan Courier Tracking Barcode for Order: ${awaitingTrackingFor.id}` : `Step 1: Scan Order QR Code`}
+                                            </h3>
+                                            <div id="reader" className="w-full rounded-2xl overflow-hidden min-h-[250px] shadow-inner bg-white"></div>
+                                            {awaitingTrackingFor && (
+                                                <button onClick={() => setAwaitingTrackingFor(null)} className="mt-6 w-full bg-red-100 hover:bg-red-200 text-red-700 py-3 rounded-xl font-bold transition-colors">
+                                                    Cancel Tracking Scan
+                                                </button>
+                                            )}
                                         </div>
                                     )}
 
                                     {scanResult && (
-                                        <div className="w-full max-w-md mt-2 bg-emerald-50 p-6 rounded-2xl border border-emerald-200 shadow-sm animate-fade-in">
+                                        <div className="w-full max-w-md mt-2 bg-indigo-50 p-6 rounded-3xl border border-indigo-100 shadow-sm animate-fade-in">
                                             <div className="flex items-center gap-3 mb-4">
-                                                <div className="w-8 h-8 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center font-black">✓</div>
-                                                <h3 className="font-bold text-xl text-emerald-800">Scan Successful & Saved!</h3>
+                                                <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center font-black text-xl">✓</div>
+                                                <h3 className="font-bold text-xl text-indigo-800">Order Scanned!</h3>
                                             </div>
-                                            <div className="bg-white p-4 rounded-xl border border-emerald-100 space-y-3 mb-6 shadow-sm">
+                                            <div className="bg-white p-4 rounded-xl border border-indigo-100 space-y-3 mb-6 shadow-sm">
                                                 <p className="text-sm"><span className="text-slate-500 font-medium uppercase text-xs tracking-wider block mb-0.5">Order ID</span> <strong className="text-lg font-mono text-slate-800">{scanResult.id}</strong></p>
                                                 <p className="text-sm"><span className="text-slate-500 font-medium uppercase text-xs tracking-wider block mb-0.5">Customer</span> <strong className="text-slate-800 uppercase">{scanResult.name}</strong></p>
                                                 <p className="text-sm"><span className="text-slate-500 font-medium uppercase text-xs tracking-wider block mb-0.5">Phone</span> <strong className="text-slate-800">{scanResult.phone}</strong></p>
                                             </div>
-                                            <div className="flex flex-col md:flex-row gap-3">
-                                                <button onClick={syncToGoogleSheets} className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white font-bold py-3 px-4 rounded-xl shadow-lg shadow-emerald-200 transition-transform transform hover:-translate-y-0.5">💾 Sync to Sheets</button>
-                                                <button onClick={() => setScanResult(null)} className="flex-1 bg-slate-800 hover:bg-slate-900 text-white font-bold py-3 px-4 rounded-xl shadow-lg transition-transform transform hover:-translate-y-0.5">🔄 Scan Next</button>
+                                            
+                                            <div className="flex flex-col gap-3">
+                                                <p className="text-xs font-bold text-slate-500 text-center uppercase mb-1">Select Action:</p>
+                                                <button onClick={() => handleDispatchToday(scanResult)} className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3.5 px-4 rounded-xl shadow-md transition-transform transform hover:-translate-y-0.5 flex items-center justify-center gap-2">
+                                                    📦 Dispatch Today (Next Scan Tracking)
+                                                </button>
+                                                <button onClick={() => handleDispatchTomorrow(scanResult)} className="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 px-4 rounded-xl shadow-md transition-transform transform hover:-translate-y-0.5 flex items-center justify-center gap-2">
+                                                    ⏳ Dispatch Tomorrow
+                                                </button>
+                                                <div className="flex gap-3 pt-2 border-t border-indigo-200 mt-2">
+                                                    <button onClick={syncToGoogleSheets} className="flex-1 bg-white hover:bg-slate-50 text-indigo-600 border border-indigo-200 font-bold py-2.5 px-4 rounded-xl shadow-sm transition-colors">
+                                                        💾 Sync to Sheets
+                                                    </button>
+                                                    <button onClick={() => setScanResult(null)} className="flex-1 bg-slate-800 hover:bg-slate-900 text-white font-bold py-2.5 px-4 rounded-xl shadow-md transition-colors">
+                                                        🔄 Scan Next
+                                                    </button>
+                                                </div>
                                             </div>
+                                            
                                             {syncStatus && <p className={`mt-4 text-center text-sm font-bold bg-white py-2 rounded-lg ${syncStatus.includes('Successfully') ? 'text-emerald-600 border border-emerald-100' : 'text-red-500 border border-red-100'}`}>{syncStatus}</p>}
                                         </div>
                                     )}
@@ -1864,12 +1629,13 @@
                                                     <th className="p-4 font-bold">Order ID</th>
                                                     <th className="p-4 font-bold">Customer</th>
                                                     <th className="p-4 font-bold">Phone</th>
+                                                    <th className="p-4 font-bold">Tracking ID</th>
                                                     <th className="p-4 font-bold text-center">Action</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="bg-white divide-y divide-slate-100">
                                                 {savedScans.length === 0 ? (
-                                                    <tr><td colSpan="5" className="p-8 text-center text-slate-400 font-medium">No scans recorded yet.</td></tr>
+                                                    <tr><td colSpan="6" className="p-8 text-center text-slate-400 font-medium">No scans recorded yet.</td></tr>
                                                 ) : (
                                                     savedScans.map(scan => (
                                                         <tr key={scan.scanId} className="hover:bg-slate-50 transition-colors">
@@ -1877,6 +1643,7 @@
                                                             <td className="p-4 font-mono text-sm font-bold text-slate-700">{scan.id}</td>
                                                             <td className="p-4 text-sm font-medium text-slate-600 uppercase">{scan.name}</td>
                                                             <td className="p-4 text-sm font-medium text-slate-600">{scan.phone || '-'}</td>
+                                                            <td className="p-4 font-mono text-sm font-bold text-indigo-600">{scan.trackingId || <span className="text-slate-400 font-normal italic text-xs">Pending</span>}</td>
                                                             <td className="p-4 text-center">
                                                                 <button onClick={() => deleteScan(scan.scanId)} className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1.5 rounded transition-colors" title="Delete Scan">
                                                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mx-auto" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
@@ -1938,7 +1705,7 @@
                                     {/* ✨ NEW: DATA BACKUP & RESTORE */}
                                     <div className="pt-6 border-t border-slate-100">
                                         <h3 className="text-lg font-extrabold text-slate-800 mb-4">Data Backup & Restore</h3>
-                                        <p className="text-sm text-slate-500 mb-4">Export your data from your previous app and import it here to restore all your bills, inventory, and expenses.</p>
+                                        <p className="text-sm text-slate-500 mb-4">Export your data from your previous app and import it here to restore all your bills and expenses.</p>
                                         <div className="flex gap-4">
                                             <button onClick={exportData} className="flex-1 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 font-bold py-3 px-4 rounded-xl transition-colors">
                                                 📥 Export Backup

@@ -238,7 +238,6 @@
             const [sheetUrl, setSheetUrl] = useState(localStorage.getItem('googleSheetUrl') || '');
             const [serverUrl, setServerUrl] = useState(localStorage.getItem('serverUrl') || '/api/save-label');
             const [logoUrl, setLogoUrl] = useState(localStorage.getItem('logoUrl') || ''); 
-            const [gpayQrUrl, setGpayQrUrl] = useState(localStorage.getItem('gpayQrUrl') || '');
             const [notification, setNotification] = useState(null); 
             const [showGpayModal, setShowGpayModal] = useState(false);
             const isEditingRef = useRef(false);
@@ -275,7 +274,6 @@
                     invoiceCounters: localStorage.getItem('invoiceCounters'),
                     savedScans: localStorage.getItem('savedScans'),
                     logoUrl: localStorage.getItem('logoUrl'),
-                    gpayQrUrl: localStorage.getItem('gpayQrUrl'),
                     invCategories: localStorage.getItem('lookstylo_categories'),
                     auth: localStorage.getItem('lookstylo_auth')
                 };
@@ -313,7 +311,6 @@
                         if(data.invoiceCounters) localStorage.setItem('invoiceCounters', data.invoiceCounters);
                         if(data.savedScans) localStorage.setItem('savedScans', data.savedScans);
                         if(data.logoUrl) localStorage.setItem('logoUrl', data.logoUrl);
-                        if(data.gpayQrUrl) localStorage.setItem('gpayQrUrl', data.gpayQrUrl);
                         if(data.invCategories) localStorage.setItem('lookstylo_categories', data.invCategories);
                         if(data.auth) localStorage.setItem('lookstylo_auth', data.auth);
                         
@@ -909,20 +906,6 @@
                 }
             };
 
-            const handleGpayQrUpload = async (e) => {
-                const file = e.target.files[0];
-                if (file) {
-                    try {
-                        const compressedImg = await compressImage(file, 600, 0.8);
-                        localStorage.setItem('gpayQrUrl', compressedImg);
-                        setGpayQrUrl(compressedImg);
-                        showNotification('GPay QR Code updated successfully!');
-                    } catch (err) {
-                        showNotification("⚠️ Image processing failed.");
-                    }
-                }
-            };
-
             const updateBillItem = (id, field, value) => {
                 setBillItems(billItems.map(i => {
                     if (i.id === id) {
@@ -1242,19 +1225,7 @@
                                 </p>
 
                                 <div className="bg-slate-50 p-4 rounded-2xl border-2 border-slate-200 inline-block shadow-inner w-full flex justify-center overflow-hidden relative group">
-                                    {gpayQrUrl ? (
-                                        <img src={gpayQrUrl} alt="Store GPay QR" className="w-[200px] h-[200px] md:w-[250px] md:h-[250px] object-contain rounded-xl" />
-                                    ) : (
-                                        <QRCodeRender data={`upi://pay?pa=9360232991@okbizaxis&pn=LOOKSTYLO%20FASHION&am=${paidGpay}&cu=INR`} size={220} />
-                                    )}
-                                </div>
-
-                                <div className="mt-5">
-                                    <input type="file" id="qr-upload-quick" accept="image/*" className="hidden" onChange={handleGpayQrUpload} />
-                                    <label htmlFor="qr-upload-quick" className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 text-xs font-bold rounded-lg border border-blue-200 cursor-pointer hover:bg-blue-100 transition-colors">
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clipRule="evenodd" /></svg>
-                                        {gpayQrUrl ? "Change Custom QR Image" : "Upload Custom QR Image"}
-                                    </label>
+                                    <QRCodeRender data={`upi://pay?pa=9360232991@okbizaxis&pn=LOOKSTYLO%20FASHION&am=${paidGpay}&cu=INR`} size={220} />
                                 </div>
                                 
                                 <div className="mt-6 text-sm font-bold text-slate-400 flex items-center justify-center gap-3 border-t border-slate-100 pt-6 uppercase tracking-widest">
@@ -1457,13 +1428,9 @@
                                     {Number(paidGpay) > 0 && (
                                         <div className="p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl flex items-center justify-between animate-fade-in cursor-pointer hover:shadow-md transition-all group" onClick={() => setShowGpayModal(true)}>
                                             <div className="flex items-center gap-4">
-                                                {gpayQrUrl ? (
-                                                    <img src={gpayQrUrl} alt="GPay QR" className="w-14 h-14 object-contain rounded-xl border-2 border-white shadow-sm bg-white" />
-                                                ) : (
-                                                    <div className="w-14 h-14 bg-white border-2 border-white rounded-xl p-1 shadow-sm flex items-center justify-center">
-                                                        <QRCodeRender data={`upi://pay?pa=9360232991@okbizaxis&pn=LOOKSTYLO%20FASHION&am=${paidGpay}&cu=INR`} size={44} />
-                                                    </div>
-                                                )}
+                                                <div className="w-14 h-14 bg-white border-2 border-white rounded-xl p-1 shadow-sm flex items-center justify-center">
+                                                    <QRCodeRender data={`upi://pay?pa=9360232991@okbizaxis&pn=LOOKSTYLO%20FASHION&am=${paidGpay}&cu=INR`} size={44} />
+                                                </div>
                                                 <div>
                                                     <h4 className="font-bold text-blue-900 text-lg leading-tight">Receive ₹{paidGpay} via GPay</h4>
                                                     <p className="text-xs text-blue-600 font-semibold">Click to show large QR scan screen to customer</p>
@@ -2113,20 +2080,6 @@
                                             <button onClick={updateAuth} className="w-full md:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 px-6 rounded-xl shadow-lg shadow-indigo-200 transition-transform transform hover:-translate-y-0.5">
                                                 Update Credentials
                                             </button>
-                                        </div>
-                                    </div>
-
-                                    {/* ✨ NEW GPAY QR UPLOAD SECTION */}
-                                    <div className="pt-4 border-t border-slate-100">
-                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 ml-1">GPay / UPI QR Scan</label>
-                                        <div className="flex gap-4 items-center">
-                                            <div className="w-16 h-16 bg-blue-50 border-2 border-dashed border-blue-300 rounded-xl flex items-center justify-center overflow-hidden shrink-0 p-1">
-                                                {gpayQrUrl ? <img src={gpayQrUrl} alt="GPay QR" className="w-full h-full object-contain" /> : <span className="text-2xl text-blue-300">📱</span>}
-                                            </div>
-                                            <div className="flex-1 space-y-2">
-                                                <input type="file" accept="image/*" onChange={handleGpayQrUpload} className="block w-full text-sm text-slate-500 file:mr-4 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer" />
-                                                <p className="text-[10px] text-slate-400 mt-1">Upload your custom GPay / PhonePe QR scan image (e.g., your <strong className="text-slate-600">gpay scan.jpeg</strong>). It will automatically pop up when you enter an amount in the GPay section.</p>
-                                            </div>
                                         </div>
                                     </div>
 

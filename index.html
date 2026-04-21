@@ -555,8 +555,9 @@
                 let msg = `Thank you for shopping with us 😀\n\n*Your e-Bill Summary:*\nInvoice: ${billInvoice}\nDate: ${billDate.split('-').reverse().join('-')}\nTotal Amount: ₹ ${grandTotal}\nPaid Amount: ₹ ${totalPaidAndAdvance}\nPending Balance: ₹ ${balanceAmount}\n\n`;
                 
                 if (balanceAmount > 0) {
-                    const paymentLink = `https://upilink.in/pay/?pa=9360232991@okbizaxis&pn=LOOKSTYLO%20FASHION&am=${balanceAmount}&cu=INR`;
-                    msg += `👇 *Click link to Pay via any UPI App (GPay, PhonePe, Paytm):*\n${paymentLink}\n\n*Or use UPI ID:* 9360232991@okbizaxis\n\n`;
+                    const qrData = `upi://pay?pa=9360232991@okbizaxis&pn=LOOKSTYLO FASHION&am=${balanceAmount}&cu=INR`;
+                    const qrLink = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qrData)}`;
+                    msg += `👇 *Click link to view Payment QR Code:*\n${qrLink}\n\n*Or use UPI ID:* 9360232991@okbizaxis\n\n`;
                 }
                 
                 msg += `Based on your recent experience, how would you rate your experience at Lookstylo Fashion?\n⭐ Please rate us here: https://g.page/r/CYYvcLcuUkztECk/review`;
@@ -567,8 +568,9 @@
             const sendReminderWhatsApp = (bill) => {
                 const phone = formatPhoneForWa(bill.phone);
                 if (!phone) return showNotification("No phone number recorded for this bill.");
-                const paymentLink = `https://upilink.in/pay/?pa=9360232991@okbizaxis&pn=LOOKSTYLO%20FASHION&am=${bill.balance}&cu=INR`;
-                const msg = `*LOOKSTYLO FASHION - Payment Reminder*\n\nDear ${bill.customer || 'Customer'},\nThis is a friendly reminder for your pending balance of *₹ ${bill.balance}* against Invoice ${bill.id}.\n\nPlease clear the dues at your earliest convenience.\n\n👇 *Click link to Pay via any UPI App:*\n${paymentLink}\n\n*Or use UPI ID:* 9360232991@okbizaxis\n\nThank you!`;
+                const qrData = `upi://pay?pa=9360232991@okbizaxis&pn=LOOKSTYLO FASHION&am=${bill.balance}&cu=INR`;
+                const qrLink = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qrData)}`;
+                const msg = `*LOOKSTYLO FASHION - Payment Reminder*\n\nDear ${bill.customer || 'Customer'},\nThis is a friendly reminder for your pending balance of *₹ ${bill.balance}* against Invoice ${bill.id}.\n\nPlease clear the dues at your earliest convenience.\n\n👇 *Click link to view Payment QR Code:*\n${qrLink}\n\n*Or use UPI ID:* 9360232991@okbizaxis\n\nThank you!`;
                 window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
             };
 

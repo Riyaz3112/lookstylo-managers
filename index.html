@@ -331,6 +331,7 @@
             const handleInvImageUpload = (e) => {
                 const file = e.target.files[0];
                 if (file) {
+                    // Compress check/warning could go here, keeping it simple for now
                     const reader = new FileReader();
                     reader.onloadend = () => setInvFormData({ ...invFormData, image: reader.result });
                     reader.readAsDataURL(file);
@@ -358,10 +359,18 @@
                     newList = [updatedItem, ...inventory];
                 }
 
-                setInventory(newList);
-                localStorage.setItem('lookstylo_inv_v2', JSON.stringify(newList));
-                setIsInvModalOpen(false);
-                showNotification(invFormData.id ? "Item Updated Successfully!" : "New Item Added to Inventory!");
+                try {
+                    localStorage.setItem('lookstylo_inv_v2', JSON.stringify(newList));
+                    setInventory(newList);
+                    setIsInvModalOpen(false);
+                    showNotification(invFormData.id ? "Item Updated Successfully!" : "New Item Added to Inventory!");
+                } catch (e) {
+                    if (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED') {
+                        showNotification("⚠️ Storage Full! Image is too large or too many items. Try removing some images.");
+                    } else {
+                        showNotification("⚠️ Error saving item. Please check your data.");
+                    }
+                }
             };
 
             const deleteInventoryItem = (id, name) => {
@@ -546,8 +555,8 @@
                 let msg = `Thank you for shopping with us 😀\n\n*Your e-Bill Summary:*\nInvoice: ${billInvoice}\nDate: ${billDate.split('-').reverse().join('-')}\nTotal Amount: ₹ ${grandTotal}\nPaid Amount: ₹ ${totalPaidAndAdvance}\nPending Balance: ₹ ${balanceAmount}\n\n`;
                 
                 if (balanceAmount > 0) {
-                    const upiLink = `upi://pay?pa=9360232991@okbizaxis&pn=LOOKSTYLO%20FASHION&am=${balanceAmount}&cu=INR`;
-                    msg += `👇 *Click to Pay Balance via UPI (GPay/PhonePe):*\n${upiLink}\n\nUPI ID: *9360232991@okbizaxis*\n\n`;
+                    const paymentLink = `https://upilink.in/pay/?pa=9360232991@okbizaxis&pn=LOOKSTYLO%20FASHION&am=${balanceAmount}&cu=INR`;
+                    msg += `👇 *Click link to Pay via any UPI App (GPay, PhonePe, Paytm):*\n${paymentLink}\n\n*Or use UPI ID:* 9360232991@okbizaxis\n\n`;
                 }
                 
                 msg += `Based on your recent experience, how would you rate your experience at Lookstylo Fashion?\n⭐ Please rate us here: https://g.page/r/CYYvcLcuUkztECk/review`;
@@ -558,8 +567,8 @@
             const sendReminderWhatsApp = (bill) => {
                 const phone = formatPhoneForWa(bill.phone);
                 if (!phone) return showNotification("No phone number recorded for this bill.");
-                const upiLink = `upi://pay?pa=9360232991@okbizaxis&pn=LOOKSTYLO%20FASHION&am=${bill.balance}&cu=INR`;
-                const msg = `*LOOKSTYLO FASHION - Payment Reminder*\n\nDear ${bill.customer || 'Customer'},\nThis is a friendly reminder for your pending balance of *₹ ${bill.balance}* against Invoice ${bill.id}.\n\nPlease clear the dues at your earliest convenience.\n\n👇 *Click to Pay Balance via UPI (GPay/PhonePe):*\n${upiLink}\n\nUPI ID: *9360232991@okbizaxis*\n\nThank you!`;
+                const paymentLink = `https://upilink.in/pay/?pa=9360232991@okbizaxis&pn=LOOKSTYLO%20FASHION&am=${bill.balance}&cu=INR`;
+                const msg = `*LOOKSTYLO FASHION - Payment Reminder*\n\nDear ${bill.customer || 'Customer'},\nThis is a friendly reminder for your pending balance of *₹ ${bill.balance}* against Invoice ${bill.id}.\n\nPlease clear the dues at your earliest convenience.\n\n👇 *Click link to Pay via any UPI App:*\n${paymentLink}\n\n*Or use UPI ID:* 9360232991@okbizaxis\n\nThank you!`;
                 window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
             };
 
@@ -828,8 +837,13 @@
                     const reader = new FileReader();
                     reader.onloadend = () => {
                         const base64String = reader.result;
-                        setLogoUrl(base64String); localStorage.setItem('logoUrl', base64String);
-                        showNotification('Logo updated successfully!');
+                        try {
+                            localStorage.setItem('logoUrl', base64String);
+                            setLogoUrl(base64String); 
+                            showNotification('Logo updated successfully!');
+                        } catch (err) {
+                            showNotification("⚠️ Image too large! Please upload a smaller file (under 1MB).");
+                        }
                     };
                     reader.readAsDataURL(file);
                 }
@@ -841,9 +855,13 @@
                     const reader = new FileReader();
                     reader.onloadend = () => {
                         const base64String = reader.result;
-                        setGpayQrUrl(base64String);
-                        localStorage.setItem('gpayQrUrl', base64String);
-                        showNotification('GPay QR Code updated successfully!');
+                        try {
+                            localStorage.setItem('gpayQrUrl', base64String);
+                            setGpayQrUrl(base64String);
+                            showNotification('GPay QR Code updated successfully!');
+                        } catch (err) {
+                            showNotification("⚠️ Image too large! Please upload a smaller file (under 1MB).");
+                        }
                     };
                     reader.readAsDataURL(file);
                 }

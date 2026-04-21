@@ -57,7 +57,7 @@
         ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        .animate-fade-in { animation: fadeIn 0.4s ease-out forwards; }
+        .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
     </style>
 </head>
 <body class="text-slate-800 antialiased selection:bg-indigo-200 selection:text-indigo-900">
@@ -172,7 +172,9 @@
             const [sheetUrl, setSheetUrl] = useState(localStorage.getItem('googleSheetUrl') || '');
             const [serverUrl, setServerUrl] = useState(localStorage.getItem('serverUrl') || '/api/save-label');
             const [logoUrl, setLogoUrl] = useState(localStorage.getItem('logoUrl') || ''); 
+            const [gpayQrUrl, setGpayQrUrl] = useState(localStorage.getItem('gpayQrUrl') || '');
             const [notification, setNotification] = useState(null); 
+            const [showGpayModal, setShowGpayModal] = useState(false);
             const isEditingRef = useRef(false);
 
             const showNotification = (msg) => {
@@ -201,12 +203,14 @@
             const exportData = () => {
                 const backupData = {
                     savedBills: localStorage.getItem('savedBills'),
-                    inventory: localStorage.getItem('inventory'),
+                    inventory: localStorage.getItem('lookstylo_inv_v2') || localStorage.getItem('inventory'),
                     shopExpenses: localStorage.getItem('shopExpenses'),
                     customers: localStorage.getItem('customers'),
                     invoiceCounters: localStorage.getItem('invoiceCounters'),
                     savedScans: localStorage.getItem('savedScans'),
-                    logoUrl: localStorage.getItem('logoUrl')
+                    logoUrl: localStorage.getItem('logoUrl'),
+                    gpayQrUrl: localStorage.getItem('gpayQrUrl'),
+                    invCategories: localStorage.getItem('lookstylo_categories')
                 };
                 const blob = new Blob([JSON.stringify(backupData)], { type: "application/json" });
                 const url = URL.createObjectURL(blob);
@@ -227,12 +231,23 @@
                     try {
                         const data = JSON.parse(event.target.result);
                         if(data.savedBills) localStorage.setItem('savedBills', data.savedBills);
-                        if(data.inventory) localStorage.setItem('inventory', data.inventory);
+                        if(data.inventory) {
+                            try {
+                                const parsedInv = JSON.parse(data.inventory);
+                                if (!Array.isArray(parsedInv)) {
+                                    localStorage.setItem('inventory', data.inventory);
+                                } else {
+                                    localStorage.setItem('lookstylo_inv_v2', data.inventory);
+                                }
+                            } catch(e) {}
+                        }
                         if(data.shopExpenses) localStorage.setItem('shopExpenses', data.shopExpenses);
                         if(data.customers) localStorage.setItem('customers', data.customers);
                         if(data.invoiceCounters) localStorage.setItem('invoiceCounters', data.invoiceCounters);
                         if(data.savedScans) localStorage.setItem('savedScans', data.savedScans);
                         if(data.logoUrl) localStorage.setItem('logoUrl', data.logoUrl);
+                        if(data.gpayQrUrl) localStorage.setItem('gpayQrUrl', data.gpayQrUrl);
+                        if(data.invCategories) localStorage.setItem('lookstylo_categories', data.invCategories);
                         
                         alert("Data imported successfully! The app will now reload to apply your data.");
                         window.location.reload();
@@ -245,54 +260,125 @@
 
             const [customers, setCustomers] = useState(() => JSON.parse(localStorage.getItem('customers') || '{}'));
 
-            // ✨ INVENTORY MANAGEMENT
-            const DEFAULT_INVENTORY_RAW = {
-                'IPL JERSEY MI - M': { price: 280, hsn: '', gst: 0, styleCode: '' },
-                'IPL JERSEY RCB - M': { price: 280, hsn: '', gst: 0, styleCode: '' },
-                'IPL JERSEY CSK - M': { price: 280, hsn: '', gst: 0, styleCode: '' },
-                'FOOT BALL JERSEY - M': { price: 280, hsn: '', gst: 0, styleCode: '' },
-                'BACKPRINT DROPSHOLDER - M': { price: 380, hsn: '', gst: 0, styleCode: '' },
-                'DIS FAB POLO 0838 - M': { price: 500, hsn: '', gst: 0, styleCode: '' },
-                'NET FOLDING DROPSHOLDER 0839 - M': { price: 450, hsn: '', gst: 0, styleCode: '' },
-                'BAGGY TRACK BLACK - M': { price: 280, hsn: '', gst: 0, styleCode: '' },
-                'BAGGY TRACK RED - M': { price: 280, hsn: '', gst: 0, styleCode: '' },
-                'BAGGY TRACK SANDLE - M': { price: 280, hsn: '', gst: 0, styleCode: '' }
-            };
-
+            // ✨ ZOZO-STYLE INVENTORY MANAGEMENT
+            const DEFAULT_CATEGORIES = ['T-Shirts', 'Shirts', 'Jeans', 'Trousers', 'Jackets/Hoodies', 'Trackpants', 'Accessories', 'General'];
+            const [invCategories, setInvCategories] = useState(() => {
+                try {
+                    const saved = localStorage.getItem('lookstylo_categories');
+                    if (saved) return JSON.parse(saved);
+                } catch(e) {}
+                return DEFAULT_CATEGORIES;
+            });
+            
             const [inventory, setInventory] = useState(() => {
-                const stored = JSON.parse(localStorage.getItem('inventory'));
-                if (!stored) return DEFAULT_INVENTORY_RAW;
-                const migrated = {};
-                for (const key in stored) {
-                    if (typeof stored[key] === 'number') { 
-                        migrated[key] = { price: stored[key], hsn: '', gst: 0, styleCode: '' }; 
-                    } else { 
-                        migrated[key] = { ...stored[key], styleCode: stored[key].styleCode || '' }; 
+                try {
+                    const storedV2 = localStorage.getItem('lookstylo_inv_v2');
+                    if (storedV2) return JSON.parse(storedV2);
+                    
+                    // Fallback / Migrate from old dictionary format
+                    const oldStored = JSON.parse(localStorage.getItem('inventory') || '{}');
+                    if (oldStored && !Array.isArray(oldStored)) {
+                        const migrated = Object.entries(oldStored).map(([key, val]) => ({
+                            id: generateSafeId(),
+                            name: key.toUpperCase(),
+                            category: 'General',
+                            sku: val.styleCode || Math.floor(100000 + Math.random() * 900000).toString(),
+                            price: val.price || 0,
+                            purchasePrice: 0,
+                            stock: 10,
+                            hsn: val.hsn || '',
+                            gst: val.gst || 0,
+                            image: ''
+                        }));
+                        localStorage.setItem('lookstylo_inv_v2', JSON.stringify(migrated));
+                        return migrated;
+                    }
+                } catch(e) { console.error(e); }
+                return [];
+            });
+
+            // Inventory Modal States
+            const [isInvModalOpen, setIsInvModalOpen] = useState(false);
+            const [invSearch, setInvSearch] = useState('');
+            const [invCategoryFilter, setInvCategoryFilter] = useState('All');
+            const [invFormData, setInvFormData] = useState({ id: '', name: '', category: 'General', sku: '', price: '', purchasePrice: '', stock: '', hsn: '', gst: 0, image: '' });
+
+            const handleAddCategory = () => {
+                const newCat = window.prompt("Enter new category name:");
+                if (newCat && newCat.trim()) {
+                    const catName = newCat.trim();
+                    if (!invCategories.includes(catName)) {
+                        const updated = [...invCategories, catName];
+                        setInvCategories(updated);
+                        localStorage.setItem('lookstylo_categories', JSON.stringify(updated));
+                        setInvFormData(prev => ({ ...prev, category: catName }));
+                        showNotification(`Category "${catName}" added!`);
+                    } else {
+                        setInvFormData(prev => ({ ...prev, category: catName }));
                     }
                 }
-                return migrated;
-            });
-            const [newItemName, setNewItemName] = useState('');
-            const [newItemPrice, setNewItemPrice] = useState('');
-            const [newItemHsn, setNewItemHsn] = useState(''); 
-            const [newItemStyleCode, setNewItemStyleCode] = useState('');
-
-            const handleAddInventory = () => {
-                if (!newItemName.trim() || !newItemPrice) return showNotification("Please enter item name and price.");
-                const upperName = newItemName.trim().toUpperCase();
-                const newInv = { ...inventory, [upperName]: { price: Number(newItemPrice), hsn: newItemHsn.trim(), gst: 0, styleCode: newItemStyleCode.trim().toUpperCase() } };
-                setInventory(newInv); localStorage.setItem('inventory', JSON.stringify(newInv));
-                setNewItemName(''); setNewItemPrice(''); setNewItemHsn(''); setNewItemStyleCode('');
-                showNotification(`${upperName} added to inventory!`);
             };
 
-            const handleDeleteInventory = (itemName) => {
-                if(window.confirm(`Delete ${itemName} from inventory?`)) {
-                    const newInv = { ...inventory }; delete newInv[itemName];
-                    setInventory(newInv); localStorage.setItem('inventory', JSON.stringify(newInv));
+            const openInvModal = (item = null) => {
+                if (item) {
+                    setInvFormData({ ...item });
+                } else {
+                    setInvFormData({ id: '', name: '', category: invCategories[0] || 'General', sku: Math.floor(100000 + Math.random() * 900000).toString(), price: '', purchasePrice: '', stock: 0, hsn: '', gst: 0, image: '' });
+                }
+                setIsInvModalOpen(true);
+            };
+
+            const handleInvImageUpload = (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onloadend = () => setInvFormData({ ...invFormData, image: reader.result });
+                    reader.readAsDataURL(file);
+                }
+            };
+
+            const saveInventoryItem = () => {
+                if (!invFormData.name.trim() || !invFormData.price) return showNotification("Please provide Name and Selling Price.");
+                
+                const updatedItem = {
+                    ...invFormData,
+                    name: invFormData.name.trim().toUpperCase(),
+                    sku: invFormData.sku.trim() || Math.floor(100000 + Math.random() * 900000).toString(),
+                    price: Number(invFormData.price) || 0,
+                    purchasePrice: Number(invFormData.purchasePrice) || 0,
+                    stock: Number(invFormData.stock) || 0,
+                    gst: Number(invFormData.gst) || 0,
+                    id: invFormData.id || generateSafeId()
+                };
+
+                let newList;
+                if (invFormData.id) {
+                    newList = inventory.map(i => i.id === updatedItem.id ? updatedItem : i);
+                } else {
+                    newList = [updatedItem, ...inventory];
+                }
+
+                setInventory(newList);
+                localStorage.setItem('lookstylo_inv_v2', JSON.stringify(newList));
+                setIsInvModalOpen(false);
+                showNotification(invFormData.id ? "Item Updated Successfully!" : "New Item Added to Inventory!");
+            };
+
+            const deleteInventoryItem = (id, name) => {
+                if(window.confirm(`Are you sure you want to delete ${name} from inventory?`)) {
+                    const newList = inventory.filter(i => i.id !== id);
+                    setInventory(newList);
+                    localStorage.setItem('lookstylo_inv_v2', JSON.stringify(newList));
                     showNotification("Item deleted.");
                 }
             };
+
+            const filteredInventory = inventory.filter(item => {
+                const matchesSearch = item.name.includes(invSearch.toUpperCase()) || item.sku.includes(invSearch);
+                const matchesCat = invCategoryFilter === 'All' || item.category === invCategoryFilter;
+                return matchesSearch && matchesCat;
+            });
+
 
             // ✨ EXPENSES MANAGEMENT 
             const todayStr = new Date().toISOString().split('T')[0];
@@ -749,16 +835,34 @@
                 }
             };
 
+            const handleGpayQrUpload = (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        const base64String = reader.result;
+                        setGpayQrUrl(base64String);
+                        localStorage.setItem('gpayQrUrl', base64String);
+                        showNotification('GPay QR Code updated successfully!');
+                    };
+                    reader.readAsDataURL(file);
+                }
+            };
+
             const updateBillItem = (id, field, value) => {
                 setBillItems(billItems.map(i => {
                     if (i.id === id) {
                         let updated = { ...i, [field]: value }; 
                         if (field === 'particular') {
                             const upperVal = value.toUpperCase();
-                            if (inventory[upperVal]) {
-                                updated.rate = inventory[upperVal].price;
-                                if (inventory[upperVal].hsn) updated.hsn = inventory[upperVal].hsn;
-                                if (inventory[upperVal].gst) updated.gst = inventory[upperVal].gst;
+                            // Zozo feature: search by exact name or SKU (Barcode)
+                            const foundItem = inventory.find(inv => inv.name.toUpperCase() === upperVal || inv.sku === upperVal);
+                            
+                            if (foundItem) {
+                                updated.particular = foundItem.name; // snap to name if sku was scanned
+                                updated.rate = foundItem.price;
+                                if (foundItem.hsn) updated.hsn = foundItem.hsn;
+                                if (foundItem.gst) updated.gst = foundItem.gst;
                             }
                         }
                         return updated;
@@ -1007,8 +1111,45 @@
                     )}
 
                     {notification && (
-                        <div className="fixed bottom-6 right-6 bg-slate-900 text-white font-bold px-6 py-4 rounded-2xl shadow-2xl z-[100] flex items-center gap-3 animate-bounce">
+                        <div className="fixed bottom-6 right-6 bg-slate-900 text-white font-bold px-6 py-4 rounded-2xl shadow-2xl z-[100] flex items-center gap-3 animate-fade-in">
                             <span className="text-2xl">✨</span> {notification}
+                        </div>
+                    )}
+
+                    {/* ✨ GPAY MODAL POPUP */}
+                    {showGpayModal && (
+                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[300] flex items-center justify-center p-4 animate-fade-in" onClick={() => setShowGpayModal(false)}>
+                            <div className="bg-white rounded-3xl shadow-2xl p-8 transform transition-all max-w-sm w-full text-center" onClick={e => e.stopPropagation()}>
+                                <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4 shadow-inner">
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-blue-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/><path d="M14 14h.01M17 14h.01M20 14h.01M14 17h.01M17 17h.01M20 17h.01M14 20h.01M17 20h.01M20 20h.01"/></svg>
+                                </div>
+                                <h3 className="text-2xl font-black text-slate-800 mb-1">Scan to Pay</h3>
+                                <p className="text-slate-500 font-medium mb-6 flex items-center justify-center gap-2">
+                                    Amount: <span className="text-3xl font-black text-blue-600">₹{paidGpay}</span>
+                                </p>
+
+                                <div className="bg-slate-50 p-4 rounded-2xl border-2 border-slate-200 inline-block shadow-inner w-full flex justify-center overflow-hidden relative group">
+                                    {gpayQrUrl ? (
+                                        <img src={gpayQrUrl} alt="Store GPay QR" className="w-[200px] h-[200px] md:w-[250px] md:h-[250px] object-contain rounded-xl" />
+                                    ) : (
+                                        <QRCodeRender data={`upi://pay?pa=9360232991@okbizaxis&pn=LOOKSTYLO%20FASHION&am=${paidGpay}&cu=INR`} size={220} />
+                                    )}
+                                </div>
+
+                                <div className="mt-5">
+                                    <input type="file" id="qr-upload-quick" accept="image/*" className="hidden" onChange={handleGpayQrUpload} />
+                                    <label htmlFor="qr-upload-quick" className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 text-xs font-bold rounded-lg border border-blue-200 cursor-pointer hover:bg-blue-100 transition-colors">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clipRule="evenodd" /></svg>
+                                        {gpayQrUrl ? "Change Custom QR Image" : "Upload Custom QR Image"}
+                                    </label>
+                                </div>
+                                
+                                <div className="mt-6 text-sm font-bold text-slate-400 flex items-center justify-center gap-3 border-t border-slate-100 pt-6 uppercase tracking-widest">
+                                    <span>GPay</span> • <span>PhonePe</span> • <span>UPI</span>
+                                </div>
+
+                                <button onClick={() => setShowGpayModal(false)} className="mt-6 w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-4 rounded-xl transition-colors shadow-lg">Done</button>
+                            </div>
                         </div>
                     )}
 
@@ -1134,12 +1275,12 @@
                                         </div>
                                         <div className="p-5 space-y-3 bg-white">
                                             <datalist id="preset-items">
-                                                {Object.keys(inventory).map(item => <option key={item} value={item} />)}
+                                                {inventory.map(item => <option key={item.id} value={item.name}>{item.sku}</option>)}
                                             </datalist>
                                             {billItems.map((item, index) => (
                                                 <div key={item.id} className="flex gap-2 items-center group flex-wrap md:flex-nowrap">
                                                     <div className="w-6 text-center text-xs font-bold text-slate-400">{index + 1}.</div>
-                                                    <input list="preset-items" type="text" placeholder="Item Name / Product" value={item.particular} onChange={e=>updateBillItem(item.id, 'particular', e.target.value)} className="flex-grow p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm uppercase outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all shadow-sm w-full md:w-auto" />
+                                                    <input list="preset-items" type="text" placeholder="Item Name or Barcode/SKU" value={item.particular} onChange={e=>updateBillItem(item.id, 'particular', e.target.value)} className="flex-grow p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm uppercase outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all shadow-sm w-full md:w-auto" />
                                                     
                                                     {billType === 'GST' && (
                                                         <>
@@ -1168,7 +1309,6 @@
                                         </div>
                                     </div>
 
-                                    {/* ✨ NEW: Bill Description / Notes */}
                                     <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100 shadow-sm">
                                         <div className="flex justify-between items-end mb-1.5 ml-1">
                                             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">Bill Description / Notes (Optional)</label>
@@ -1176,10 +1316,12 @@
                                         <textarea rows="2" value={billDescription} onChange={e=>setBillDescription(e.target.value)} placeholder="Add any special remarks, warranty notes, or description for this bill..." className="w-full p-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-sm font-medium shadow-sm resize-none"></textarea>
                                     </div>
 
-                                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-inner">
+                                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-inner relative">
                                         <ModernInput label="Discount (%)" type="number" min="0" max="100" value={billDiscount} onChange={e=>setBillDiscount(e.target.value)} className="bg-white" />
                                         <ModernInput label="Advance (₹)" type="number" min="0" value={advancePayment} onChange={e=>setAdvancePayment(e.target.value)} className="bg-white text-purple-700" />
-                                        <ModernInput label="Paid GPay (₹)" type="number" min="0" value={paidGpay} onChange={e=>setPaidGpay(e.target.value)} className="bg-white text-blue-700" />
+                                        
+                                        <ModernInput label="Paid GPay (₹)" type="number" min="0" value={paidGpay} onChange={e=>setPaidGpay(e.target.value)} className="bg-white text-blue-700 font-bold" />
+                                        
                                         <ModernInput label="Paid Cash (₹)" type="number" min="0" value={paidCash} onChange={e=>setPaidCash(e.target.value)} className="bg-white text-emerald-700" />
                                         <div>
                                             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 ml-1">Next Promo</label>
@@ -1192,6 +1334,28 @@
                                             </select>
                                         </div>
                                     </div>
+
+                                    {/* ✨ GPAY PAYMENT BANNER */}
+                                    {Number(paidGpay) > 0 && (
+                                        <div className="p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl flex items-center justify-between animate-fade-in cursor-pointer hover:shadow-md transition-all group" onClick={() => setShowGpayModal(true)}>
+                                            <div className="flex items-center gap-4">
+                                                {gpayQrUrl ? (
+                                                    <img src={gpayQrUrl} alt="GPay QR" className="w-14 h-14 object-contain rounded-xl border-2 border-white shadow-sm bg-white" />
+                                                ) : (
+                                                    <div className="w-14 h-14 bg-white border-2 border-white rounded-xl p-1 shadow-sm flex items-center justify-center">
+                                                        <QRCodeRender data={`upi://pay?pa=9360232991@okbizaxis&pn=LOOKSTYLO%20FASHION&am=${paidGpay}&cu=INR`} size={44} />
+                                                    </div>
+                                                )}
+                                                <div>
+                                                    <h4 className="font-bold text-blue-900 text-lg leading-tight">Receive ₹{paidGpay} via GPay</h4>
+                                                    <p className="text-xs text-blue-600 font-semibold">Click to show large QR scan screen to customer</p>
+                                                </div>
+                                            </div>
+                                            <div className="bg-white text-blue-600 p-2.5 rounded-full shadow-sm group-hover:scale-110 transition-transform">
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>
+                                            </div>
+                                        </div>
+                                    )}
                                     
                                     <div className="flex justify-between items-center p-5 bg-gradient-to-r from-slate-50 to-indigo-50/50 rounded-2xl border border-slate-200 shadow-sm">
                                         <div className="flex flex-col">
@@ -1241,64 +1405,195 @@
                             </>
                         )}
 
-                        {/* -------------------- TAB: INVENTORY ✨ -------------------- */}
+                        {/* ✨ -------------------- TAB: INVENTORY (ZOZO STYLE) -------------------- */}
                         {activeTab === 'inventory' && (
-                            <div className="w-full max-w-5xl mx-auto bg-white p-8 rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100">
-                                <div className="flex justify-between items-center border-b border-slate-100 pb-4 mb-6">
-                                    <h2 className="text-3xl font-extrabold text-slate-800">Inventory Management</h2>
-                                    <span className="bg-indigo-50 text-indigo-600 font-bold px-3 py-1 rounded-lg text-sm">{Object.keys(inventory).length} Items</span>
-                                </div>
+                            <div className="w-full max-w-6xl mx-auto bg-white p-8 rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100 relative">
                                 
-                                <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 mb-8 flex flex-col md:flex-row gap-4 items-end">
-                                    <div className="flex-1 w-full">
-                                        <ModernInput label="Product Name" type="text" placeholder="e.g., BLACK T-SHIRT - M" value={newItemName} onChange={e=>setNewItemName(e.target.value)} className="uppercase" />
+                                {isInvModalOpen && (
+                                    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[400] flex items-center justify-center p-4 animate-fade-in" onClick={() => setIsInvModalOpen(false)}>
+                                        <div className="bg-white rounded-3xl shadow-2xl p-6 md:p-8 transform transition-all w-full max-w-3xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                                            <div className="flex justify-between items-center mb-6 border-b border-slate-100 pb-4">
+                                                <h3 className="text-2xl font-black text-slate-800">{invFormData.id ? 'Edit Product' : 'Add New Product'}</h3>
+                                                <button onClick={() => setIsInvModalOpen(false)} className="text-slate-400 hover:text-slate-600 text-3xl leading-none">&times;</button>
+                                            </div>
+
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                                {/* Image Upload Column */}
+                                                <div className="col-span-1 flex flex-col items-center space-y-4">
+                                                    <div className="w-48 h-48 bg-slate-50 border-2 border-dashed border-slate-300 rounded-2xl flex flex-col items-center justify-center overflow-hidden relative group">
+                                                        {invFormData.image ? (
+                                                            <img src={invFormData.image} alt="Product" className="w-full h-full object-cover group-hover:opacity-50 transition-opacity" />
+                                                        ) : (
+                                                            <div className="text-center p-4">
+                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-slate-300 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                                                                <span className="text-xs font-bold text-slate-400 uppercase">Upload Image</span>
+                                                            </div>
+                                                        )}
+                                                        <input type="file" accept="image/*" onChange={handleInvImageUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                                                    </div>
+                                                    <div className="w-full">
+                                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 ml-1">SKU / Barcode</label>
+                                                        <div className="flex gap-2">
+                                                            <input type="text" value={invFormData.sku} onChange={e=>setInvFormData({...invFormData, sku: e.target.value})} className="flex-1 p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 outline-none text-sm font-mono text-slate-700" />
+                                                            <button onClick={() => setInvFormData({...invFormData, sku: Math.floor(100000 + Math.random() * 900000).toString()})} className="bg-indigo-100 hover:bg-indigo-200 text-indigo-700 px-3 rounded-xl font-bold" title="Generate New">↻</button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* Form Fields Column */}
+                                                <div className="col-span-1 md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                    <div className="md:col-span-2">
+                                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 ml-1">Product Name *</label>
+                                                        <input type="text" value={invFormData.name} onChange={e=>setInvFormData({...invFormData, name: e.target.value})} placeholder="e.g. BLACK DROPSHOULDER TEE" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/50 outline-none text-sm uppercase font-bold text-slate-800" />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 ml-1">Category</label>
+                                                        <div className="flex gap-2">
+                                                            <select value={invFormData.category} onChange={e=>setInvFormData({...invFormData, category: e.target.value})} className="flex-1 p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/50 outline-none text-sm font-medium text-slate-700 cursor-pointer">
+                                                                {invCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                                                            </select>
+                                                            <button onClick={handleAddCategory} className="bg-indigo-100 hover:bg-indigo-200 text-indigo-700 px-3 rounded-xl font-bold shadow-sm" title="Add New Category">+</button>
+                                                        </div>
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 ml-1">Current Stock Qty</label>
+                                                        <input type="number" min="0" value={invFormData.stock} onChange={e=>setInvFormData({...invFormData, stock: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/50 outline-none text-sm font-bold text-slate-800" />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 ml-1">Purchase Price (₹)</label>
+                                                        <input type="number" min="0" value={invFormData.purchasePrice} onChange={e=>setInvFormData({...invFormData, purchasePrice: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/50 outline-none text-sm font-medium text-red-600" />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 ml-1">Selling Price (₹) *</label>
+                                                        <input type="number" min="0" value={invFormData.price} onChange={e=>setInvFormData({...invFormData, price: e.target.value})} className="w-full p-3 bg-indigo-50 border border-indigo-200 rounded-xl focus:ring-2 focus:ring-indigo-500/50 outline-none text-sm font-black text-indigo-700" />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 ml-1">HSN Code</label>
+                                                        <input type="text" value={invFormData.hsn} onChange={e=>setInvFormData({...invFormData, hsn: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/50 outline-none text-sm font-medium text-slate-700" />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 ml-1">GST %</label>
+                                                        <select value={invFormData.gst} onChange={e=>setInvFormData({...invFormData, gst: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/50 outline-none text-sm font-medium text-slate-700 cursor-pointer">
+                                                            <option value="0">0% (Non-GST)</option>
+                                                            <option value="5">5%</option>
+                                                            <option value="12">12%</option>
+                                                            <option value="18">18%</option>
+                                                            <option value="28">28%</option>
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div className="mt-8 flex gap-3 border-t border-slate-100 pt-6">
+                                                <button onClick={() => setIsInvModalOpen(false)} className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3.5 rounded-xl transition-colors">Cancel</button>
+                                                <button onClick={saveInventoryItem} className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 rounded-xl transition-colors shadow-lg shadow-indigo-200">
+                                                    {invFormData.id ? 'Save Changes' : 'Add to Inventory'}
+                                                </button>
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div className="w-full md:w-32">
-                                        <ModernInput label="HSN Code" type="text" placeholder="e.g., 6109" value={newItemHsn} onChange={e=>setNewItemHsn(e.target.value)} />
+                                )}
+
+                                {/* Inventory Top Stats */}
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                                    <div className="bg-gradient-to-br from-indigo-500 to-purple-600 p-6 rounded-3xl shadow-lg shadow-indigo-200 text-white flex flex-col justify-center relative overflow-hidden">
+                                        <div className="absolute -right-4 -top-4 opacity-20 text-8xl">📦</div>
+                                        <span className="text-sm font-bold uppercase tracking-wider mb-1 opacity-90">Total Products</span>
+                                        <span className="text-4xl font-black">{inventory.length}</span>
                                     </div>
-                                    <div className="w-full md:w-32">
-                                        <ModernInput label="Style Code" type="text" placeholder="e.g., STY-01" value={newItemStyleCode} onChange={e=>setNewItemStyleCode(e.target.value)} />
+                                    <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-center">
+                                        <span className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Total Stock Quantity</span>
+                                        <span className="text-3xl font-black text-slate-800">{inventory.reduce((sum, item) => sum + (Number(item.stock) || 0), 0)} Units</span>
                                     </div>
-                                    <div className="w-full md:w-32">
-                                        <ModernInput label="Default Price (₹)" type="number" min="0" placeholder="e.g., 350" value={newItemPrice} onChange={e=>setNewItemPrice(e.target.value)} />
+                                    <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-center">
+                                        <span className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Total Stock Value</span>
+                                        <span className="text-3xl font-black text-emerald-600">₹ {inventory.reduce((sum, item) => sum + ((Number(item.stock) || 0) * (Number(item.price) || 0)), 0).toLocaleString('en-IN')}</span>
                                     </div>
-                                    <button onClick={handleAddInventory} className="w-full md:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 px-6 rounded-xl shadow-lg shadow-indigo-200 transition-transform transform hover:-translate-y-0.5">
-                                        ➕ Add Product
+                                </div>
+
+                                {/* Controls & Actions */}
+                                <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6 bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                                    <div className="flex flex-1 w-full gap-3">
+                                        <div className="relative flex-1 max-w-md">
+                                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                                <svg className="h-5 w-5 text-slate-400" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" /></svg>
+                                            </div>
+                                            <input type="text" placeholder="Search by name or SKU..." value={invSearch} onChange={e=>setInvSearch(e.target.value)} className="w-full pl-10 p-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 outline-none text-sm font-medium text-slate-700 shadow-sm" />
+                                        </div>
+                                        <select value={invCategoryFilter} onChange={e=>setInvCategoryFilter(e.target.value)} className="p-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 outline-none text-sm font-bold text-slate-700 shadow-sm cursor-pointer w-40">
+                                            <option value="All">All Categories</option>
+                                            {invCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                                        </select>
+                                    </div>
+                                    <button onClick={() => openInvModal()} className="w-full md:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg shadow-indigo-200 transition-transform transform hover:-translate-y-0.5 flex items-center justify-center gap-2">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" /></svg>
+                                        Add Product
                                     </button>
                                 </div>
 
-                                <div className="overflow-x-auto max-h-[500px] border border-slate-200 rounded-2xl">
+                                {/* Modern Table */}
+                                <div className="overflow-x-auto border border-slate-200 rounded-2xl shadow-sm">
                                     <table className="w-full text-left border-collapse">
-                                        <thead className="sticky top-0 bg-white shadow-sm border-b border-slate-200 text-xs uppercase tracking-wider text-slate-500">
+                                        <thead className="bg-slate-50 border-b border-slate-200 text-xs uppercase tracking-wider text-slate-500">
                                             <tr>
-                                                <th className="p-4 font-bold">Product Name</th>
-                                                <th className="p-4 font-bold text-center">HSN Code</th>
-                                                <th className="p-4 font-bold text-center">Style Code</th>
-                                                <th className="p-4 font-bold text-right">Default Price (₹)</th>
+                                                <th className="p-4 font-bold">Product Info</th>
+                                                <th className="p-4 font-bold">Category</th>
+                                                <th className="p-4 font-bold text-center">Stock</th>
+                                                <th className="p-4 font-bold text-right">Price (₹)</th>
                                                 <th className="p-4 font-bold text-center w-24">Action</th>
                                             </tr>
                                         </thead>
                                         <tbody className="bg-white divide-y divide-slate-100">
-                                            {Object.entries(inventory).sort(([a], [b]) => a.localeCompare(b)).map(([name, data]) => (
-                                                <tr key={name} className="hover:bg-slate-50 transition-colors">
-                                                    <td className="p-4 font-medium text-slate-700">{name}</td>
-                                                    <td className="p-4 font-medium text-slate-600 text-center">{data.hsn || '-'}</td>
-                                                    <td className="p-4 font-medium text-slate-600 text-center">{data.styleCode || '-'}</td>
-                                                    <td className="p-4 font-bold text-slate-800 text-right">₹ {data.price}</td>
-                                                    <td className="p-4 text-center">
-                                                        <button onClick={() => handleDeleteInventory(name)} className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1.5 rounded transition-colors" title="Delete Item">
-                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mx-auto" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                            ))}
+                                            {filteredInventory.length === 0 ? (
+                                                <tr><td colSpan="5" className="p-8 text-center text-slate-400 font-medium">No products found.</td></tr>
+                                            ) : (
+                                                filteredInventory.map(item => (
+                                                    <tr key={item.id} className="hover:bg-slate-50 transition-colors group">
+                                                        <td className="p-4">
+                                                            <div className="flex items-center gap-4">
+                                                                <div className="w-12 h-12 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center overflow-hidden shrink-0">
+                                                                    {item.image ? <img src={item.image} className="w-full h-full object-cover" alt={item.name} /> : <span className="text-xl opacity-50">👕</span>}
+                                                                </div>
+                                                                <div>
+                                                                    <div className="font-bold text-slate-800">{item.name}</div>
+                                                                    <div className="text-xs text-slate-500 font-mono mt-0.5 bg-slate-100 px-1.5 py-0.5 rounded inline-block">SKU: {item.sku}</div>
+                                                                </div>
+                                                            </div>
+                                                        </td>
+                                                        <td className="p-4 font-medium text-slate-600">
+                                                            <span className="bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-md text-xs font-bold">{item.category}</span>
+                                                        </td>
+                                                        <td className="p-4 text-center">
+                                                            <span className={`inline-flex items-center justify-center px-2.5 py-1 rounded-full text-xs font-bold ${
+                                                                Number(item.stock) <= 0 ? 'bg-red-100 text-red-700' : Number(item.stock) <= 5 ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'
+                                                            }`}>
+                                                                {item.stock} {Number(item.stock) <= 5 && '⚠️'}
+                                                            </span>
+                                                        </td>
+                                                        <td className="p-4 text-right">
+                                                            <div className="font-black text-slate-800 text-base">₹{item.price}</div>
+                                                            {Number(item.purchasePrice) > 0 && <div className="text-[10px] text-slate-400 font-medium mt-0.5">Cost: ₹{item.purchasePrice}</div>}
+                                                        </td>
+                                                        <td className="p-4 text-center">
+                                                            <div className="flex justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                <button onClick={() => openInvModal(item)} className="text-blue-500 hover:text-blue-700 hover:bg-blue-50 p-2 rounded transition-colors" title="Edit Item">
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" /></svg>
+                                                                </button>
+                                                                <button onClick={() => deleteInventoryItem(item.id, item.name)} className="text-red-500 hover:text-red-700 hover:bg-red-50 p-2 rounded transition-colors" title="Delete Item">
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
+                                                                </button>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                ))
+                                            )}
                                         </tbody>
                                     </table>
                                 </div>
                             </div>
                         )}
 
-                        {/* -------------------- TAB: EXPENSES ✨ -------------------- */}
+                        {/* -------------------- TAB: EXPENSES -------------------- */}
                         {activeTab === 'expenses' && (
                             <div className="w-full max-w-5xl mx-auto bg-white p-8 rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100">
                                 <div className="flex justify-between items-center border-b border-slate-100 pb-4 mb-6">
@@ -1425,7 +1720,6 @@
                                     </div>
                                 </div>
 
-                                {/* ✨ UPDATED DASHBOARD WITH EXPENSES */}
                                 <div className={`grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 print:gap-4`}>
                                     <div className="bg-indigo-50 p-5 rounded-2xl border border-indigo-100 flex flex-col justify-center">
                                         <span className="text-xs font-bold text-indigo-500 uppercase tracking-wider mb-1">Total Sales</span>
@@ -1686,7 +1980,8 @@
                                         </div>
                                         <p className="text-[11px] text-slate-400 mt-2 ml-1">Upload an image file from your device, or paste a direct image link. This will instantly appear on the app header and all printed bills.</p>
                                     </div>
-                                    <div>
+
+                                    <div className="pt-4 border-t border-slate-100">
                                         <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 ml-1">Google Apps Script Webhook URL</label>
                                         <textarea rows="3" value={sheetUrl} onChange={e => { setSheetUrl(e.target.value); localStorage.setItem('googleSheetUrl', e.target.value); }} placeholder="https://script.google.com/macros/s/..." className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all font-mono text-xs text-slate-700 shadow-inner resize-none"></textarea>
                                         <p className="text-[11px] text-slate-400 mt-2 ml-1">Used to automatically log scanned packages into a Google Sheet.</p>
@@ -1702,7 +1997,7 @@
                                         </button>
                                     </div>
 
-                                    {/* ✨ NEW: DATA BACKUP & RESTORE */}
+                                    {/* DATA BACKUP & RESTORE */}
                                     <div className="pt-6 border-t border-slate-100">
                                         <h3 className="text-lg font-extrabold text-slate-800 mb-4">Data Backup & Restore</h3>
                                         <p className="text-sm text-slate-500 mb-4">Export your data from your previous app and import it here to restore all your bills and expenses.</p>
@@ -1724,7 +2019,6 @@
                         )}
                     </main>
 
-                    {/* ✨ Web App Footer */}
                     <footer className="w-full text-center py-4 text-slate-400 text-xs font-bold uppercase tracking-widest no-print border-t border-slate-200 mt-auto bg-slate-50">
                         Powered by Shariff Enterprises
                     </footer>

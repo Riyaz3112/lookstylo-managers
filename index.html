@@ -165,7 +165,8 @@
             CreditCard: ({ className="w-5 h-5" }) => <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg>,
             Bank: ({ className="w-5 h-5" }) => <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="10" width="18" height="10" rx="2" ry="2"></rect><path d="M3 10l9-6 9 6"></path><path d="M8 20v-4"></path><path d="M12 20v-4"></path><path d="M16 20v-4"></path></svg>,
             Cash: ({ className="w-5 h-5" }) => <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"></rect><circle cx="12" cy="12" r="2"></circle><path d="M6 12h.01M18 12h.01"></path></svg>,
-            Users: ({ className="w-5 h-5" }) => <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+            Users: ({ className="w-5 h-5" }) => <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>,
+            Truck: ({ className="w-5 h-5" }) => <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg>
         };
 
         const Barcode = ({ value }) => {
@@ -245,6 +246,11 @@
                     )}
                 </div>
 
+                <div className="mt-0.5 mb-1 border-2 border-gray-900 flex flex-col justify-center items-center bg-gray-100 shrink-0 py-0.5">
+                    <span className="font-black text-[12px] uppercase tracking-widest text-gray-900 leading-tight">Pre-Paid Package</span>
+                    <span className="font-bold text-[8px] uppercase text-gray-800 tracking-wider leading-tight">Do Not Collect Cash On Delivery</span>
+                </div>
+
                 <div className="mt-auto flex flex-col items-center pt-4 border-t-2 border-gray-900">
                     <div className="mb-4 bg-white p-2 rounded"><Barcode value={orderId || '0000'} /></div>
                     <div className="flex items-center justify-between w-full font-bold text-lg text-brand-red uppercase px-4">
@@ -286,9 +292,11 @@
             const [sheetUrl, setSheetUrl] = useState(localStorage.getItem('googleSheetUrl') || '');
             const [serverUrl, setServerUrl] = useState(localStorage.getItem('serverUrl') || '/api/save-label');
             const [logoUrl, setLogoUrl] = useState(localStorage.getItem('logoUrl') || ''); 
-            const [waPreference, setWaPreference] = useState(localStorage.getItem('waPreference') || 'standard');
+            // Default to WA Business for robust messaging
+            const [waPreference, setWaPreference] = useState(localStorage.getItem('waPreference') || 'w4b_force');
             const [notification, setNotification] = useState(null); 
             const [showGpayModal, setShowGpayModal] = useState(false);
+            const [deliveryActionBill, setDeliveryActionBill] = useState(null);
             const isEditingRef = useRef(false);
 
             const showNotification = (msg) => {
@@ -296,14 +304,27 @@
                 setTimeout(() => setNotification(null), 3000);
             };
 
-            // Unified WhatsApp Opener
+            // Unified WhatsApp Opener specifically enforcing Business App if configured
             const openWhatsAppMsg = (phone, msg) => {
                 const encodedMsg = encodeURIComponent(msg);
-                if (waPreference === 'w4b_android') {
-                    // Forces Android to open the specific WhatsApp Business package
-                    window.location.href = `intent://send?phone=${phone}&text=${encodedMsg}#Intent;package=com.whatsapp.w4b;scheme=whatsapp;end;`;
+                
+                if (waPreference === 'w4b_force' || waPreference === 'w4b_android') {
+                    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+                    
+                    if (isIOS) {
+                        // iOS custom scheme for WhatsApp Business
+                        window.location.href = `whatsapp-smb://send?phone=${phone}&text=${encodedMsg}`;
+                    } else {
+                        // Android Intent for WhatsApp Business
+                        window.location.href = `intent://send?phone=${phone}&text=${encodedMsg}#Intent;package=com.whatsapp.w4b;scheme=whatsapp;end;`;
+                    }
+                    
+                    // Fallback in case they don't have WA Business installed
+                    setTimeout(() => {
+                        window.open(`https://wa.me/${phone}?text=${encodedMsg}`, '_blank');
+                    }, 2500);
                 } else {
-                    // Standard fallback
+                    // Standard WhatsApp Web/App fallback
                     window.open(`https://wa.me/${phone}?text=${encodedMsg}`, '_blank');
                 }
             };
@@ -623,28 +644,28 @@
                 return cleaned.length === 10 ? `91${cleaned}` : cleaned;
             };
 
-            const handleDispatchTomorrow = (order) => {
-                setScanResult(null); 
+            // Unified Delivery Action Handler
+            const handleDeliveryAction = (order, actionType) => {
                 const phone = formatPhoneForWa(order.phone);
-                if (!phone) { showNotification("Scan Saved! (No phone to send WhatsApp)"); return; }
-                const msg = `*LOOKSTYLO FASHION*\n\nDear ${order.name || 'Customer'},\nSorry for the delay! 🙏 Your order (${order.id}) will be dispatched tomorrow. We appreciate your patience.\n\nThank you for shopping with us!`;
-                openWhatsAppMsg(phone, msg);
-            };
+                if (!phone) {
+                    showNotification("Order saved but no valid phone number for WhatsApp.");
+                    if (activeTab === 'scanner') setScanResult(null);
+                    setDeliveryActionBill(null);
+                    return;
+                }
 
-            const handleDispatchToday = (order) => {
-                setAwaitingTrackingFor(order);
-                setScanResult(null); 
-                const phone = formatPhoneForWa(order.phone);
-                if (!phone) { showNotification("Scan Saved! (No phone to send WhatsApp)"); return; }
-                const msg = `*LOOKSTYLO FASHION*\n\nDear ${order.name || 'Customer'},\nGreat news! 🎉 Your order (${order.id}) is scheduled to be dispatched today.\nWe will share the tracking details with you shortly.\n\nThank you for shopping with us!`;
-                openWhatsAppMsg(phone, msg);
-            };
+                let msg = '';
+                if (actionType === 'dispatch_today') {
+                    msg = `*LOOKSTYLO FASHION*\n\nDear ${order.customer || order.name || 'Customer'},\nGreat news! 🎉 Your order (${order.id}) is scheduled to be dispatched today.\nWe will share the tracking details with you shortly.\n\nThank you for shopping with us!`;
+                    if (activeTab === 'scanner') setAwaitingTrackingFor(order);
+                } else if (actionType === 'dispatch_tomorrow') {
+                    msg = `*LOOKSTYLO FASHION*\n\nDear ${order.customer || order.name || 'Customer'},\nSorry for the delay! 🙏 Your order (${order.id}) will be dispatched tomorrow. We appreciate your patience.\n\nThank you for shopping with us!`;
+                } else if (actionType === 'out_for_delivery') {
+                    msg = `*LOOKSTYLO FASHION*\n\nDear ${order.customer || order.name || 'Customer'},\nGood news! 🛵 Your order (${order.id}) is OUT FOR DELIVERY today.\nOur delivery executive will contact you shortly to hand over your package.\n\nThank you for shopping with us!`;
+                }
 
-            const handleOutForDelivery = (order) => {
-                setScanResult(null); 
-                const phone = formatPhoneForWa(order.phone);
-                if (!phone) { showNotification("Scan Saved! (No phone to send WhatsApp)"); return; }
-                const msg = `*LOOKSTYLO FASHION*\n\nDear ${order.name || 'Customer'},\nGood news! 🛵 Your order (${order.id}) is OUT FOR DELIVERY today.\nOur delivery executive will contact you shortly to hand over your package.\n\nThank you for shopping with us!`;
+                if (activeTab === 'scanner') setScanResult(null);
+                setDeliveryActionBill(null);
                 openWhatsAppMsg(phone, msg);
             };
 
@@ -1043,10 +1064,10 @@
             } else { periodLabel = reportYear; }
 
             const exportCustomerData = () => {
-                if (savedBills.length === 0) { showNotification("No customer data available!"); return; }
+                if (baseReportBills.length === 0) { showNotification("No customer data available for this period!"); return; }
                 
                 const headers = ['Date', 'Invoice ID', 'Customer Name', 'Phone Number', 'Delivery Mode / Address', 'Purchased Amount (Rs)', 'Pending Balance (Rs)'];
-                const rows = savedBills.slice().reverse().map(bill => [
+                const rows = baseReportBills.slice().reverse().map(bill => [
                     bill.date.split('-').reverse().join('-'), 
                     bill.id, 
                     `"${(bill.customer || '').replace(/"/g, '""')}"`, 
@@ -1060,12 +1081,12 @@
                 const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
                 const link = document.createElement('a');
                 link.setAttribute('href', URL.createObjectURL(blob));
-                link.setAttribute('download', `Lookstylo_All_Customers_${new Date().toISOString().split('T')[0]}.csv`);
+                link.setAttribute('download', `Lookstylo_Customers_${periodLabel.replace(/ /g, '_')}.csv`);
                 link.style.visibility = 'hidden';
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
-                showNotification("Customer Database Exported Successfully!");
+                showNotification(`Customer Database (${periodLabel}) Exported Successfully!`);
             };
 
             const exportToCSV = () => {
@@ -1299,6 +1320,36 @@
                     {notification && (
                         <div className="fixed bottom-6 right-6 bg-slate-900 text-white font-bold px-6 py-4 rounded-xl shadow-2xl z-[100] flex items-center gap-3 animate-fade-in border border-slate-700">
                             <Icons.CheckCircle className="w-5 h-5 text-emerald-400" /> {notification}
+                        </div>
+                    )}
+
+                    {/* Delivery Updates Modal */}
+                    {deliveryActionBill && (
+                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[300] flex items-center justify-center p-4 animate-fade-in" onClick={() => setDeliveryActionBill(null)}>
+                            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-8 transform transition-all border border-slate-200" onClick={e => e.stopPropagation()}>
+                                <div className="flex justify-between items-center mb-6">
+                                    <h3 className="text-xl font-extrabold text-slate-900">Delivery Status</h3>
+                                    <button onClick={()=>setDeliveryActionBill(null)} className="text-slate-400 hover:text-slate-600 text-3xl leading-none">&times;</button>
+                                </div>
+                                <div className="bg-slate-50 p-5 rounded-2xl mb-6 border border-slate-200 text-center">
+                                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1">Customer</p>
+                                    <p className="font-bold text-slate-800 uppercase text-lg">{deliveryActionBill.customer || deliveryActionBill.name || 'Unknown'}</p>
+                                    <p className="font-mono font-medium text-slate-600 mt-1 flex justify-center items-center gap-1.5">
+                                        <Icons.CheckCircle className="w-3.5 h-3.5" /> {deliveryActionBill.phone || 'No Phone Attached'}
+                                    </p>
+                                </div>
+                                <div className="space-y-3">
+                                    <button onClick={() => handleDeliveryAction(deliveryActionBill, 'dispatch_today')} className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3.5 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-sm">
+                                        <Icons.Package className="w-4 h-4" /> Dispatch Today
+                                    </button>
+                                    <button onClick={() => handleDeliveryAction(deliveryActionBill, 'dispatch_tomorrow')} className="w-full bg-white border border-slate-200 hover:bg-slate-50 text-slate-800 font-bold py-3.5 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-sm">
+                                        <Icons.Clock className="w-4 h-4" /> Dispatch Tomorrow
+                                    </button>
+                                    <button onClick={() => handleDeliveryAction(deliveryActionBill, 'out_for_delivery')} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-sm">
+                                        <Icons.Truck className="w-4 h-4" /> Out For Delivery
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     )}
 
@@ -1557,18 +1608,25 @@
                                         </span>
                                     </div>
 
-                                    <div className="flex flex-col sm:flex-row gap-4 mt-2">
-                                        <button onClick={handlePrint} className="flex-1 bg-white border border-slate-200 hover:bg-slate-50 text-slate-800 font-bold py-4 rounded-xl shadow-sm transition-all flex justify-center items-center gap-2">
-                                            <Icons.Print className="w-5 h-5 text-slate-500" />
-                                            Print Invoice
+                                    <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 mt-2">
+                                        <button onClick={handlePrint} className="w-full bg-white border border-slate-200 hover:bg-slate-50 text-slate-800 font-bold py-3.5 rounded-xl shadow-sm transition-all flex justify-center items-center gap-2 text-sm">
+                                            <Icons.Print className="w-4 h-4 text-slate-500" />
+                                            Print
                                         </button>
-                                        <button onClick={shareBillWhatsApp} className="flex-1 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 text-emerald-700 font-bold py-4 rounded-xl transition-all flex justify-center items-center gap-2">
-                                            <WhatsAppIcon className="h-5 w-5" />
-                                            Share WhatsApp
+                                        <button onClick={shareBillWhatsApp} className="w-full bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 text-emerald-700 font-bold py-3.5 rounded-xl transition-all flex justify-center items-center gap-2 text-sm">
+                                            <WhatsAppIcon className="h-4 w-4" />
+                                            WhatsApp
                                         </button>
-                                        <button onClick={handleNewBill} className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-xl shadow-md transition-all flex justify-center items-center gap-2">
-                                            <Icons.Plus className="w-5 h-5" />
-                                            New Invoice
+                                        <button onClick={() => {
+                                            if (!billCustomerPhone) return showNotification("Please enter customer phone number to send updates.");
+                                            setDeliveryActionBill({ id: billInvoice, customer: billCustomerName, phone: billCustomerPhone });
+                                        }} className="w-full bg-blue-50 border border-blue-200 hover:bg-blue-100 text-blue-700 font-bold py-3.5 rounded-xl transition-all flex justify-center items-center gap-2 text-sm">
+                                            <Icons.Truck className="w-4 h-4" />
+                                            Delivery
+                                        </button>
+                                        <button onClick={handleNewBill} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 rounded-xl shadow-md transition-all flex justify-center items-center gap-2 text-sm">
+                                            <Icons.Plus className="w-4 h-4" />
+                                            New
                                         </button>
                                     </div>
                                 </div>
@@ -1892,7 +1950,7 @@
                                         </div>
                                         <div className="flex gap-2 w-full xl:w-auto">
                                             <button onClick={exportCustomerData} className="flex-1 xl:flex-none bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-700 font-bold py-2.5 px-4 rounded-xl transition-colors flex items-center justify-center gap-2 text-sm shadow-sm">
-                                                <Icons.Users className="w-4 h-4" /> All Customers
+                                                <Icons.Users className="w-4 h-4" /> Period Customers
                                             </button>
                                             <button onClick={exportToCSV} className="flex-1 xl:flex-none bg-white border border-slate-200 hover:bg-slate-50 text-slate-800 font-bold py-2.5 px-4 rounded-xl transition-colors flex items-center justify-center gap-2 text-sm shadow-sm">
                                                 <Icons.Download className="w-4 h-4" /> Sales CSV
@@ -1939,7 +1997,7 @@
                                                     <th className="p-4 font-bold text-right border-b border-slate-200">Total</th>
                                                     <th className="p-4 font-bold text-right border-b border-slate-200">Paid</th>
                                                     <th className="p-4 font-bold text-right border-b border-slate-200">Balance</th>
-                                                    <th className="p-4 font-bold text-center border-b border-slate-200 no-print w-32">Action</th>
+                                                    <th className="p-4 font-bold text-center border-b border-slate-200 no-print w-40">Action</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="bg-white divide-y divide-slate-100 print:divide-slate-200">
@@ -1969,6 +2027,11 @@
                                                                             <Icons.CheckCircle className="h-4 w-4" />
                                                                         </button>
                                                                     )}
+                                                                    {/* ✨ Delivery Update Button */}
+                                                                    <button onClick={() => setDeliveryActionBill(bill)} className="text-blue-500 hover:text-blue-700 hover:bg-blue-50 p-2 rounded-lg transition-colors" title="Send Delivery Update">
+                                                                        <Icons.Truck className="h-4 w-4" />
+                                                                    </button>
+
                                                                     <button onClick={() => handleEditBill(bill)} className="text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 p-2 rounded-lg transition-colors" title="Edit Full Bill">
                                                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" /></svg>
                                                                     </button>
@@ -2075,14 +2138,14 @@
                                             </div>
                                             
                                             <div className="flex flex-col gap-3">
-                                                <button onClick={() => handleDispatchToday(scanResult)} className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-4 px-4 rounded-xl shadow-md transition-transform transform hover:-translate-y-0.5 flex items-center justify-center gap-2">
+                                                <button onClick={() => handleDeliveryAction(scanResult, 'dispatch_today')} className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-4 px-4 rounded-xl shadow-md transition-transform transform hover:-translate-y-0.5 flex items-center justify-center gap-2">
                                                     <Icons.Package className="w-4 h-4" /> Dispatch Today
                                                 </button>
-                                                <button onClick={() => handleDispatchTomorrow(scanResult)} className="w-full bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold py-4 px-4 rounded-xl transition-all flex items-center justify-center gap-2">
+                                                <button onClick={() => handleDeliveryAction(scanResult, 'dispatch_tomorrow')} className="w-full bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold py-4 px-4 rounded-xl transition-all flex items-center justify-center gap-2">
                                                     <Icons.Clock className="w-4 h-4" /> Dispatch Tomorrow
                                                 </button>
-                                                <button onClick={() => handleOutForDelivery(scanResult)} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 px-4 rounded-xl shadow-md transition-all flex items-center justify-center gap-2">
-                                                    <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                                                <button onClick={() => handleDeliveryAction(scanResult, 'out_for_delivery')} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 px-4 rounded-xl shadow-md transition-all flex items-center justify-center gap-2">
+                                                    <Icons.Truck className="w-4 h-4" />
                                                     Out For Delivery
                                                 </button>
                                                 <div className="flex gap-3 pt-3 mt-1 border-t border-slate-100">
@@ -2198,10 +2261,10 @@
                                         <div>
                                             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 ml-1">Preferred App</label>
                                             <select value={waPreference} onChange={e => { setWaPreference(e.target.value); localStorage.setItem('waPreference', e.target.value); }} className="w-full p-4 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all font-bold text-sm text-slate-700 shadow-sm cursor-pointer">
-                                                <option value="standard">Standard Web/App (wa.me)</option>
-                                                <option value="w4b_android">WhatsApp Business (Force Android App)</option>
+                                                <option value="w4b_force">WhatsApp Business (Recommended)</option>
+                                                <option value="standard">Standard WhatsApp (wa.me)</option>
                                             </select>
-                                            <p className="text-[11px] text-slate-400 mt-2 ml-1">Select "WhatsApp Business" if you have both apps installed on your phone and want messages to explicitly open in WA Business.</p>
+                                            <p className="text-[11px] text-slate-400 mt-2 ml-1">Select "WhatsApp Business" to force devices to open the dedicated business app rather than standard WhatsApp.</p>
                                         </div>
                                     </div>
 
